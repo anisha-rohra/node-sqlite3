@@ -13,6 +13,7 @@
 
 #include <sqlite3.h>
 #include <nan.h>
+#include <node_jsvmapi.h>
 
 using namespace v8;
 using namespace node;

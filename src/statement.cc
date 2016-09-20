@@ -14,6 +14,9 @@ Nan::Persistent<FunctionTemplate> Statement::constructor_template;
 NAN_MODULE_INIT(Statement::Init) {
     Nan::HandleScope scope;
 
+    // temporary until fully converted 
+    v8::Handle<v8::Object> targetTemp = V8LocalValue(target)->ToObject();
+
     Local<FunctionTemplate> t = Nan::New<FunctionTemplate>(New);
 
     t->InstanceTemplate()->SetInternalFieldCount(1);
@@ -28,7 +31,7 @@ NAN_MODULE_INIT(Statement::Init) {
     Nan::SetPrototypeMethod(t, "finalize", Finalize);
 
     constructor_template.Reset(t);
-    Nan::Set(target, Nan::New("Statement").ToLocalChecked(),
+    Nan::Set(targetTemp, Nan::New("Statement").ToLocalChecked(),
         Nan::GetFunction(t).ToLocalChecked());
 }
 

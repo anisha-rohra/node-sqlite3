@@ -8,6 +8,7 @@
 
 #include <sqlite3.h>
 #include <nan.h>
+#include <node_jsvmapi.h>
 
 #include "async.h"
 

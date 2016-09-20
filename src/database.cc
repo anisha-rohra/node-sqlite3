@@ -4,12 +4,16 @@
 #include "database.h"
 #include "statement.h"
 
+
 using namespace node_sqlite3;
 
 Nan::Persistent<FunctionTemplate> Database::constructor_template;
 
 NAN_MODULE_INIT(Database::Init) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
+
+    // temporary until fully converted 
+    v8::Handle<v8::Object> targetTemp = V8LocalValue(target)->ToObject();
 
     Local<FunctionTemplate> t = Nan::New<FunctionTemplate>(New);
 
@@ -28,7 +32,7 @@ NAN_MODULE_INIT(Database::Init) {
 
     constructor_template.Reset(t);
 
-    Nan::Set(target, Nan::New("Database").ToLocalChecked(),
+    Nan::Set(targetTemp, Nan::New("Database").ToLocalChecked(),
         Nan::GetFunction(t).ToLocalChecked());
 }
 

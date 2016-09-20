@@ -56,17 +56,15 @@ const char* sqlite_authorizer_string(int type);
 
 
 #define DEFINE_CONSTANT_INTEGER(target, constant, name)                        \
-    Nan::ForceSet(target,                                                      \
-        Nan::New(#name).ToLocalChecked(),                                      \
-        Nan::New<Integer>(constant),                                           \
-        static_cast<PropertyAttribute>(ReadOnly | DontDelete)                  \
+    napi_set_property(napi_env, target,                                        \
+                      napi_property_name(napi_env, #name),                      \
+                      napi_create_number(napi_env, constant)                   \
     );
 
 #define DEFINE_CONSTANT_STRING(target, constant, name)                         \
-    Nan::ForceSet(target,                                                      \
-        Nan::New(#name).ToLocalChecked(),                                      \
-        Nan::New(constant).ToLocalChecked(),                                   \
-        static_cast<PropertyAttribute>(ReadOnly | DontDelete)                  \
+    napi_set_property(napi_env, target,                                        \
+                      napi_property_name(napi_env, #name),                      \
+                      napi_create_string(napi_env, constant)                   \
     );
 
 
