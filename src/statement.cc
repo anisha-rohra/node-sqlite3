@@ -12,7 +12,7 @@ using namespace node_sqlite3;
 Nan::Persistent<FunctionTemplate> Statement::constructor_template;
 
 NAN_MODULE_INIT(Statement::Init) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     // temporary until fully converted 
     v8::Handle<v8::Object> targetTemp = V8LocalValue(target)->ToObject();
@@ -63,7 +63,7 @@ void Statement::Schedule(Work_Callback callback, Baton* baton) {
 }
 
 template <class T> void Statement::Error(T* baton) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     Statement* stmt = baton->stmt;
     // Fail hard on logic errors.
@@ -148,7 +148,7 @@ void Statement::Work_Prepare(uv_work_t* req) {
 }
 
 void Statement::Work_AfterPrepare(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     STATEMENT_INIT(PrepareBaton);
 
@@ -199,7 +199,7 @@ template <class T> Values::Field*
 }
 
 template <class T> T* Statement::Bind(Nan::NAN_METHOD_ARGS_TYPE info, int start, int last) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     if (last < 0) last = info.Length();
     Local<Function> callback;
@@ -335,7 +335,7 @@ void Statement::Work_Bind(uv_work_t* req) {
 }
 
 void Statement::Work_AfterBind(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     STATEMENT_INIT(Baton);
 
@@ -398,7 +398,7 @@ void Statement::Work_Get(uv_work_t* req) {
 }
 
 void Statement::Work_AfterGet(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     STATEMENT_INIT(RowBaton);
 
@@ -468,7 +468,7 @@ void Statement::Work_Run(uv_work_t* req) {
 }
 
 void Statement::Work_AfterRun(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     STATEMENT_INIT(RunBaton);
 
@@ -534,7 +534,7 @@ void Statement::Work_All(uv_work_t* req) {
 }
 
 void Statement::Work_AfterAll(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     STATEMENT_INIT(RowsBaton);
 
@@ -655,7 +655,7 @@ void Statement::CloseCallback(uv_handle_t* handle) {
 }
 
 void Statement::AsyncEach(uv_async_t* handle, int status) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     Async* async = static_cast<Async*>(handle->data);
 
@@ -701,7 +701,7 @@ void Statement::AsyncEach(uv_async_t* handle, int status) {
 }
 
 void Statement::Work_AfterEach(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     STATEMENT_INIT(EachBaton);
 
@@ -735,7 +735,7 @@ void Statement::Work_Reset(uv_work_t* req) {
 }
 
 void Statement::Work_AfterReset(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     STATEMENT_INIT(Baton);
 
@@ -750,7 +750,7 @@ void Statement::Work_AfterReset(uv_work_t* req) {
 }
 
 Local<Object> Statement::RowToJS(Row* row) {
-    Nan::EscapableHandleScope scope;
+    Napi::EscapableHandleScope scope;
 
     Local<Object> result = Nan::New<Object>();
 
@@ -784,7 +784,9 @@ Local<Object> Statement::RowToJS(Row* row) {
         DELETE_FIELD(field);
     }
 
-    return scope.Escape(result);
+    // conversion needed temporariliy 
+    v8::Handle<v8::Object> resultConv = V8LocalValue(scope.Escape(JsValue(result)))->ToObject();
+    return resultConv;
 }
 
 void Statement::GetRow(Row* row, sqlite3_stmt* stmt) {
@@ -830,7 +832,7 @@ NAN_METHOD(Statement::Finalize) {
 }
 
 void Statement::Finalize(Baton* baton) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     baton->stmt->Finalize();
 
@@ -855,7 +857,7 @@ void Statement::Finalize() {
 }
 
 void Statement::CleanQueue() {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     if (prepared && !queue.empty()) {
         // This statement has already been prepared and is now finalized.
