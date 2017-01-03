@@ -7,65 +7,63 @@
 #include <queue>
 
 #include <sqlite3.h>
-#include <nan.h>
-#include <node_jsvmapi.h>
+#include <node_api_helpers.h>
 
 #include "async.h"
-
-using namespace v8;
 
 namespace node_sqlite3 {
 
 class Database;
 
 
-class Database : public Nan::ObjectWrap {
+class Database : public Napi::ObjectWrap {
 public:
-    static Nan::Persistent<FunctionTemplate> constructor_template;
-    static NAN_MODULE_INIT(Init);
+    static napi_persistent constructor_template;
+    static NAPI_MODULE_INIT(Init);
 
-    static inline bool HasInstance(Local<Value> val) {
-        Nan::HandleScope scope;
-        if (!val->IsObject()) return false;
-        Local<Object> obj = val.As<Object>();
-        return Nan::New(constructor_template)->HasInstance(obj);
+    static inline bool HasInstance(napi_value val) {
+        Napi::HandleScope scope;
+        if (!Napi::IsObject(val)) return false;
+        return Napi::HasInstance(constructor_template, val);
     }
 
     struct Baton {
         uv_work_t request;
         Database* db;
-        Nan::Persistent<Function> callback;
+        napi_persistent callback;
         int status;
         std::string message;
 
-        Baton(Database* db_, Local<Function> cb_) :
+        Baton(Database* db_, napi_value cb_) :
                 db(db_), status(SQLITE_OK) {
             db->Ref();
             request.data = this;
-            callback.Reset(cb_);
+            napi_env env = napi_get_current_env();
+            callback = napi_create_persistent(env, cb_);
         }
         virtual ~Baton() {
             db->Unref();
-            callback.Reset();
+            napi_env env = napi_get_current_env();
+            napi_release_persistent(env, callback);
         }
     };
 
     struct OpenBaton : Baton {
         std::string filename;
         int mode;
-        OpenBaton(Database* db_, Local<Function> cb_, const char* filename_, int mode_) :
+        OpenBaton(Database* db_, napi_value cb_, const char* filename_, int mode_) :
             Baton(db_, cb_), filename(filename_), mode(mode_) {}
     };
 
     struct ExecBaton : Baton {
         std::string sql;
-        ExecBaton(Database* db_, Local<Function> cb_, const char* sql_) :
+        ExecBaton(Database* db_, napi_value cb_, const char* sql_) :
             Baton(db_, cb_), sql(sql_) {}
     };
 
     struct LoadExtensionBaton : Baton {
         std::string filename;
-        LoadExtensionBaton(Database* db_, Local<Function> cb_, const char* filename_) :
+        LoadExtensionBaton(Database* db_, napi_value cb_, const char* filename_) :
             Baton(db_, cb_), filename(filename_) {}
     };
 
@@ -101,7 +99,7 @@ public:
     friend class Statement;
 
 protected:
-    Database() : Nan::ObjectWrap(),
+    Database() : Napi::ObjectWrap(),
         _handle(NULL),
         open(false),
         locked(false),
@@ -119,38 +117,38 @@ protected:
         open = false;
     }
 
-    static NAN_METHOD(New);
+    static NAPI_METHOD(New);
     static void Work_BeginOpen(Baton* baton);
     static void Work_Open(uv_work_t* req);
     static void Work_AfterOpen(uv_work_t* req);
 
-    static NAN_GETTER(OpenGetter);
+    static NAPI_METHOD(OpenGetter);
 
     void Schedule(Work_Callback callback, Baton* baton, bool exclusive = false);
     void Process();
 
-    static NAN_METHOD(Exec);
+    static NAPI_METHOD(Exec);
     static void Work_BeginExec(Baton* baton);
     static void Work_Exec(uv_work_t* req);
     static void Work_AfterExec(uv_work_t* req);
 
-    static NAN_METHOD(Wait);
+    static NAPI_METHOD(Wait);
     static void Work_Wait(Baton* baton);
 
-    static NAN_METHOD(Close);
+    static NAPI_METHOD(Close);
     static void Work_BeginClose(Baton* baton);
     static void Work_Close(uv_work_t* req);
     static void Work_AfterClose(uv_work_t* req);
 
-    static NAN_METHOD(LoadExtension);
+    static NAPI_METHOD(LoadExtension);
     static void Work_BeginLoadExtension(Baton* baton);
     static void Work_LoadExtension(uv_work_t* req);
     static void Work_AfterLoadExtension(uv_work_t* req);
 
-    static NAN_METHOD(Serialize);
-    static NAN_METHOD(Parallelize);
+    static NAPI_METHOD(Serialize);
+    static NAPI_METHOD(Parallelize);
 
-    static NAN_METHOD(Configure);
+    static NAPI_METHOD(Configure);
 
     static void SetBusyTimeout(Baton* baton);
 

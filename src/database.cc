@@ -4,51 +4,40 @@
 #include "database.h"
 #include "statement.h"
 
-
 using namespace node_sqlite3;
 
-Nan::Persistent<FunctionTemplate> Database::constructor_template;
+napi_persistent Database::constructor_template;
 
-NAN_MODULE_INIT(Database::Init) {
-    Napi::HandleScope scope;
+NAPI_MODULE_INIT(Database::Init) {
+    napi_method_descriptor methods[] = {
+        { Database::Close, "close" },
+        { Database::Exec, "exec" },
+        { Database::Wait, "wait" },
+        { Database::LoadExtension, "loadExtension" },
+        { Database::Serialize, "serialize" },
+        { Database::Parallelize, "parallelize" },
+        { Database::Configure, "configure" },
+        { Database::OpenGetter, "open" },
+    };
 
-    // temporary until fully converted 
-    v8::Handle<v8::Object> targetTemp = V8LocalValue(target)->ToObject();
+    napi_value ctor = napi_create_constructor_for_wrap_with_methods(env, constructor_template, Database::New, "Database", 8, methods);
 
-    Local<FunctionTemplate> t = Nan::New<FunctionTemplate>(New);
-
-    t->InstanceTemplate()->SetInternalFieldCount(1);
-    t->SetClassName(Nan::New("Database").ToLocalChecked());
-
-    Nan::SetPrototypeMethod(t, "close", Close);
-    Nan::SetPrototypeMethod(t, "exec", Exec);
-    Nan::SetPrototypeMethod(t, "wait", Wait);
-    Nan::SetPrototypeMethod(t, "loadExtension", LoadExtension);
-    Nan::SetPrototypeMethod(t, "serialize", Serialize);
-    Nan::SetPrototypeMethod(t, "parallelize", Parallelize);
-    Nan::SetPrototypeMethod(t, "configure", Configure);
-
-    NODE_SET_GETTER(t, "open", OpenGetter);
-
-    constructor_template.Reset(t);
-
-    Nan::Set(targetTemp, Nan::New("Database").ToLocalChecked(),
-        Nan::GetFunction(t).ToLocalChecked());
+    Napi::Set(exports, "Database", ctor);
 }
 
 void Database::Process() {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     if (!open && locked && !queue.empty()) {
-        EXCEPTION(Nan::New("Database handle is closed").ToLocalChecked(), SQLITE_MISUSE, exception);
-        Local<Value> argv[] = { exception };
+        EXCEPTION(Napi::New("Database handle is closed"), SQLITE_MISUSE, exception);
+        napi_value argv[] = { exception };
         bool called = false;
 
         // Call all callbacks with the error object.
         while (!queue.empty()) {
             Call* call = queue.front();
-            Local<Function> cb = Nan::New(call->baton->callback);
-            if (!cb.IsEmpty() && cb->IsFunction()) {
+            napi_value cb = Napi::New(call->baton->callback);
+            if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
                 TRY_CATCH_CALL(this->handle(), cb, 1, argv);
                 called = true;
             }
@@ -62,7 +51,7 @@ void Database::Process() {
         // When we couldn't call a callback function, emit an error on the
         // Database object.
         if (!called) {
-            Local<Value> info[] = { Nan::New("error").ToLocalChecked(), exception };
+            napi_value info[] = { Napi::New("error"), exception };
             EMIT_EVENT(handle(), 2, info);
         }
         return;
@@ -85,17 +74,17 @@ void Database::Process() {
 }
 
 void Database::Schedule(Work_Callback callback, Baton* baton, bool exclusive) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     if (!open && locked) {
-        EXCEPTION(Nan::New("Database is closed").ToLocalChecked(), SQLITE_MISUSE, exception);
-        Local<Function> cb = Nan::New(baton->callback);
-        if (!cb.IsEmpty() && cb->IsFunction()) {
-            Local<Value> argv[] = { exception };
+        EXCEPTION(Napi::New("Database is closed"), SQLITE_MISUSE, exception);
+        napi_value cb = Napi::New(baton->callback);
+        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+            napi_value argv[] = { exception };
             TRY_CATCH_CALL(handle(), cb, 1, argv);
         }
         else {
-            Local<Value> argv[] = { Nan::New("error").ToLocalChecked(), exception };
+            napi_value argv[] = { Napi::New("error"), exception };
             EMIT_EVENT(handle(), 2, argv);
         }
         return;
@@ -110,37 +99,39 @@ void Database::Schedule(Work_Callback callback, Baton* baton, bool exclusive) {
     }
 }
 
-NAN_METHOD(Database::New) {
-    if (!info.IsConstructCall()) {
-        return Nan::ThrowTypeError("Use the new operator to create new Database objects");
+NAPI_METHOD(Database::New) {
+    if (!napi_is_construct_call(env, info)) {
+        return Napi::ThrowTypeError("Use the new operator to create new Database objects");
     }
 
+    GET_ARGUMENTS(3);
     REQUIRE_ARGUMENT_STRING(0, filename);
     int pos = 1;
 
     int mode;
-    if (info.Length() >= pos && info[pos]->IsInt32()) {
-        mode = Nan::To<int>(info[pos++]).FromJust();
+    if (Napi::Length(info) >= pos && Napi::IsInt32(args[pos])) {
+        mode = Napi::To<int>(args[pos++]);
     } else {
         mode = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
     }
 
-    Local<Function> callback;
-    if (info.Length() >= pos && info[pos]->IsFunction()) {
-        callback = Local<Function>::Cast(info[pos++]);
+    napi_value callback = Napi::Value();
+    if (Napi::Length(info) >= pos && Napi::IsFunction(args[pos])) {
+        callback = (args[pos++]);
     }
 
+    napi_value _this = napi_get_cb_this(env, info);
     Database* db = new Database();
-    db->Wrap(info.This());
+    db->Wrap(_this);
 
-    info.This()->ForceSet(Nan::New("filename").ToLocalChecked(), info[0].As<String>(), ReadOnly);
-    info.This()->ForceSet(Nan::New("mode").ToLocalChecked(), Nan::New(mode), ReadOnly);
+    Napi::Set(_this, Napi::New("filename"), args[0]);
+    Napi::Set(_this, Napi::New("mode"), Napi::New(mode));
 
     // Start opening the database.
     OpenBaton* baton = new OpenBaton(db, callback, *filename, mode);
     Work_BeginOpen(baton);
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
 void Database::Work_BeginOpen(Baton* baton) {
@@ -172,33 +163,33 @@ void Database::Work_Open(uv_work_t* req) {
 }
 
 void Database::Work_AfterOpen(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     OpenBaton* baton = static_cast<OpenBaton*>(req->data);
     Database* db = baton->db;
 
-    Local<Value> argv[1];
+    napi_value argv[1];
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Nan::New(baton->message.c_str()).ToLocalChecked(), baton->status, exception);
+        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
         argv[0] = exception;
     }
     else {
         db->open = true;
-        argv[0] = Nan::Null();
+        argv[0] = Napi::Null();
     }
 
-    Local<Function> cb = Nan::New(baton->callback);
+    napi_value cb = Napi::New(baton->callback);
 
-    if (!cb.IsEmpty() && cb->IsFunction()) {
+    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
     else if (!db->open) {
-        Local<Value> info[] = { Nan::New("error").ToLocalChecked(), argv[0] };
+        napi_value info[] = { Napi::New("error"), argv[0] };
         EMIT_EVENT(db->handle(), 2, info);
     }
 
     if (db->open) {
-        Local<Value> info[] = { Nan::New("open").ToLocalChecked() };
+        napi_value info[] = { Napi::New("open") };
         EMIT_EVENT(db->handle(), 1, info);
         db->Process();
     }
@@ -206,19 +197,23 @@ void Database::Work_AfterOpen(uv_work_t* req) {
     delete baton;
 }
 
-NAN_GETTER(Database::OpenGetter) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
-    info.GetReturnValue().Set(db->open);
+NAPI_METHOD(Database::OpenGetter) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
+    napi_set_return_value(env, info, Napi::New(db->open));
 }
 
-NAN_METHOD(Database::Close) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
+NAPI_METHOD(Database::Close) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
+
+    GET_ARGUMENTS(1);
     OPTIONAL_ARGUMENT_FUNCTION(0, callback);
 
     Baton* baton = new Baton(db, callback);
     db->Schedule(Work_BeginClose, baton, true);
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
 void Database::Work_BeginClose(Baton* baton) {
@@ -248,36 +243,36 @@ void Database::Work_Close(uv_work_t* req) {
 }
 
 void Database::Work_AfterClose(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     Baton* baton = static_cast<Baton*>(req->data);
     Database* db = baton->db;
 
-    Local<Value> argv[1];
+    napi_value argv[1];
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Nan::New(baton->message.c_str()).ToLocalChecked(), baton->status, exception);
+        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
         argv[0] = exception;
     }
     else {
         db->open = false;
         // Leave db->locked to indicate that this db object has reached
         // the end of its life.
-        argv[0] = Nan::Null();
+        argv[0] = Napi::Null();
     }
 
-    Local<Function> cb = Nan::New(baton->callback);
+    napi_value cb = Napi::New(baton->callback);
 
     // Fire callbacks.
-    if (!cb.IsEmpty() && cb->IsFunction()) {
+    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
     else if (db->open) {
-        Local<Value> info[] = { Nan::New("error").ToLocalChecked(), argv[0] };
+        napi_value info[] = { Napi::New("error"), argv[0] };
         EMIT_EVENT(db->handle(), 2, info);
     }
 
     if (!db->open) {
-        Local<Value> info[] = { Nan::New("close").ToLocalChecked(), argv[0] };
+        napi_value info[] = { Napi::New("close"), argv[0] };
         EMIT_EVENT(db->handle(), 1, info);
         db->Process();
     }
@@ -285,74 +280,82 @@ void Database::Work_AfterClose(uv_work_t* req) {
     delete baton;
 }
 
-NAN_METHOD(Database::Serialize) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
+NAPI_METHOD(Database::Serialize) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
+
+    GET_ARGUMENTS(1);
     OPTIONAL_ARGUMENT_FUNCTION(0, callback);
 
     bool before = db->serialize;
     db->serialize = true;
 
-    if (!callback.IsEmpty() && callback->IsFunction()) {
-        TRY_CATCH_CALL(info.This(), callback, 0, NULL);
+    if (!Napi::IsEmpty(callback) && Napi::IsFunction(callback)) {
+        TRY_CATCH_CALL(_this, callback, 0, NULL);
         db->serialize = before;
     }
 
     db->Process();
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
-NAN_METHOD(Database::Parallelize) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
+NAPI_METHOD(Database::Parallelize) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
+
+    GET_ARGUMENTS(1);
     OPTIONAL_ARGUMENT_FUNCTION(0, callback);
 
     bool before = db->serialize;
     db->serialize = false;
 
-    if (!callback.IsEmpty() && callback->IsFunction()) {
-        TRY_CATCH_CALL(info.This(), callback, 0, NULL);
+    if (!Napi::IsEmpty(callback) && Napi::IsFunction(callback)) {
+        TRY_CATCH_CALL(_this, callback, 0, NULL);
         db->serialize = before;
     }
 
     db->Process();
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
-NAN_METHOD(Database::Configure) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
+NAPI_METHOD(Database::Configure) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
 
     REQUIRE_ARGUMENTS(2);
+    GET_ARGUMENTS(2);
 
-    if (Nan::Equals(info[0], Nan::New("trace").ToLocalChecked()).FromJust()) {
-        Local<Function> handle;
+    if (Napi::Equals(args[0], Napi::New("trace"))) {
+        napi_value handle = Napi::Value();
         Baton* baton = new Baton(db, handle);
         db->Schedule(RegisterTraceCallback, baton);
     }
-    else if (Nan::Equals(info[0], Nan::New("profile").ToLocalChecked()).FromJust()) {
-        Local<Function> handle;
+    else if (Napi::Equals(args[0], Napi::New("profile"))) {
+        napi_value handle = Napi::Value();
         Baton* baton = new Baton(db, handle);
         db->Schedule(RegisterProfileCallback, baton);
     }
-    else if (Nan::Equals(info[0], Nan::New("busyTimeout").ToLocalChecked()).FromJust()) {
-        if (!info[1]->IsInt32()) {
-            return Nan::ThrowTypeError("Value must be an integer");
+    else if (Napi::Equals(args[0], Napi::New("busyTimeout"))) {
+        if (!Napi::IsInt32(args[1])) {
+            return Napi::ThrowTypeError("Value must be an integer");
         }
-        Local<Function> handle;
+        napi_value handle = Napi::Value();
         Baton* baton = new Baton(db, handle);
-        baton->status = Nan::To<int>(info[1]).FromJust();
+        baton->status = Napi::To<int>(args[1]);
         db->Schedule(SetBusyTimeout, baton);
     }
     else {
-        return Nan::ThrowError(Exception::Error(String::Concat(
-            Nan::To<String>(info[0]).ToLocalChecked(),
-            Nan::New(" is not a valid configuration option").ToLocalChecked()
-        )));
+        return Napi::ThrowError(Napi::StringConcat(
+            Napi::ToString(Napi::New(args[0])),
+            Napi::New(" is not a valid configuration option")
+        ));
     }
 
     db->Process();
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
 void Database::SetBusyTimeout(Baton* baton) {
@@ -393,11 +396,11 @@ void Database::TraceCallback(void* db, const char* sql) {
 
 void Database::TraceCallback(Database* db, std::string* sql) {
     // Note: This function is called in the main V8 thread.
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
-    Local<Value> argv[] = {
-        Nan::New("trace").ToLocalChecked(),
-        Nan::New(sql->c_str()).ToLocalChecked()
+    napi_value argv[] = {
+        Napi::New("trace"),
+        Napi::New(sql->c_str())
     };
     EMIT_EVENT(db->handle(), 2, argv);
     delete sql;
@@ -433,12 +436,12 @@ void Database::ProfileCallback(void* db, const char* sql, sqlite3_uint64 nsecs) 
 }
 
 void Database::ProfileCallback(Database *db, ProfileInfo* info) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
-    Local<Value> argv[] = {
-        Nan::New("profile").ToLocalChecked(),
-        Nan::New(info->sql.c_str()).ToLocalChecked(),
-        Nan::New<Number>((double)info->nsecs / 1000000.0)
+    napi_value argv[] = {
+        Napi::New("profile"),
+        Napi::New(info->sql.c_str()),
+        Napi::New((double)info->nsecs / 1000000.0)
     };
     EMIT_EVENT(db->handle(), 3, argv);
     delete info;
@@ -477,28 +480,30 @@ void Database::UpdateCallback(void* db, int type, const char* database,
 }
 
 void Database::UpdateCallback(Database *db, UpdateInfo* info) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
-    Local<Value> argv[] = {
-        Nan::New(sqlite_authorizer_string(info->type)).ToLocalChecked(),
-        Nan::New(info->database.c_str()).ToLocalChecked(),
-        Nan::New(info->table.c_str()).ToLocalChecked(),
-        Nan::New<Number>(info->rowid),
+    napi_value argv[] = {
+        Napi::New(sqlite_authorizer_string(info->type)),
+        Napi::New(info->database.c_str()),
+        Napi::New(info->table.c_str()),
+        Napi::New((double)(info->rowid))
     };
     EMIT_EVENT(db->handle(), 4, argv);
     delete info;
 }
 
-NAN_METHOD(Database::Exec) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
+NAPI_METHOD(Database::Exec) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
 
+    GET_ARGUMENTS(2);
     REQUIRE_ARGUMENT_STRING(0, sql);
     OPTIONAL_ARGUMENT_FUNCTION(1, callback);
 
     Baton* baton = new ExecBaton(db, callback, *sql);
     db->Schedule(Work_BeginExec, baton, true);
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
 void Database::Work_BeginExec(Baton* baton) {
@@ -530,27 +535,27 @@ void Database::Work_Exec(uv_work_t* req) {
 }
 
 void Database::Work_AfterExec(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     ExecBaton* baton = static_cast<ExecBaton*>(req->data);
     Database* db = baton->db;
 
-    Local<Function> cb = Nan::New(baton->callback);
+    napi_value cb = Napi::New(baton->callback);
 
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Nan::New(baton->message.c_str()).ToLocalChecked(), baton->status, exception);
+        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
 
-        if (!cb.IsEmpty() && cb->IsFunction()) {
-            Local<Value> argv[] = { exception };
+        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+            napi_value argv[] = { exception };
             TRY_CATCH_CALL(db->handle(), cb, 1, argv);
         }
         else {
-            Local<Value> info[] = { Nan::New("error").ToLocalChecked(), exception };
+            napi_value info[] = { Napi::New("error"), exception };
             EMIT_EVENT(db->handle(), 2, info);
         }
     }
-    else if (!cb.IsEmpty() && cb->IsFunction()) {
-        Local<Value> argv[] = { Nan::Null() };
+    else if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        napi_value argv[] = { Napi::Null() };
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
 
@@ -559,28 +564,30 @@ void Database::Work_AfterExec(uv_work_t* req) {
     delete baton;
 }
 
-NAN_METHOD(Database::Wait) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
+NAPI_METHOD(Database::Wait) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
 
+    GET_ARGUMENTS(1);
     OPTIONAL_ARGUMENT_FUNCTION(0, callback);
 
     Baton* baton = new Baton(db, callback);
     db->Schedule(Work_Wait, baton, true);
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
 void Database::Work_Wait(Baton* baton) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     assert(baton->db->locked);
     assert(baton->db->open);
     assert(baton->db->_handle);
     assert(baton->db->pending == 0);
 
-    Local<Function> cb = Nan::New(baton->callback);
-    if (!cb.IsEmpty() && cb->IsFunction()) {
-        Local<Value> argv[] = { Nan::Null() };
+    napi_value cb = Napi::New(baton->callback);
+    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        napi_value argv[] = { Napi::Null() };
         TRY_CATCH_CALL(baton->db->handle(), cb, 1, argv);
     }
 
@@ -589,16 +596,18 @@ void Database::Work_Wait(Baton* baton) {
     delete baton;
 }
 
-NAN_METHOD(Database::LoadExtension) {
-    Database* db = Nan::ObjectWrap::Unwrap<Database>(info.This());
+NAPI_METHOD(Database::LoadExtension) {
+    napi_value _this = napi_get_cb_this(env, info);
+    Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
 
+    GET_ARGUMENTS(2);
     REQUIRE_ARGUMENT_STRING(0, filename);
     OPTIONAL_ARGUMENT_FUNCTION(1, callback);
 
     Baton* baton = new LoadExtensionBaton(db, callback, *filename);
     db->Schedule(Work_BeginLoadExtension, baton, true);
 
-    info.GetReturnValue().Set(info.This());
+    napi_set_return_value(env, info, _this);
 }
 
 void Database::Work_BeginLoadExtension(Baton* baton) {
@@ -633,26 +642,26 @@ void Database::Work_LoadExtension(uv_work_t* req) {
 }
 
 void Database::Work_AfterLoadExtension(uv_work_t* req) {
-    Nan::HandleScope scope;
+    Napi::HandleScope scope;
 
     LoadExtensionBaton* baton = static_cast<LoadExtensionBaton*>(req->data);
     Database* db = baton->db;
-    Local<Function> cb = Nan::New(baton->callback);
+    napi_value cb = Napi::New(baton->callback);
 
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Nan::New(baton->message.c_str()).ToLocalChecked(), baton->status, exception);
+        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
 
-        if (!cb.IsEmpty() && cb->IsFunction()) {
-            Local<Value> argv[] = { exception };
+        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+            napi_value argv[] = { exception };
             TRY_CATCH_CALL(db->handle(), cb, 1, argv);
         }
         else {
-            Local<Value> info[] = { Nan::New("error").ToLocalChecked(), exception };
+            napi_value info[] = { Napi::New("error"), exception };
             EMIT_EVENT(db->handle(), 2, info);
         }
     }
-    else if (!cb.IsEmpty() && cb->IsFunction()) {
-        Local<Value> argv[] = { Nan::Null() };
+    else if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        napi_value argv[] = { Napi::Null() };
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
 

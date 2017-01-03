@@ -12,11 +12,8 @@
 #include <vector>
 
 #include <sqlite3.h>
-#include <nan.h>
-#include <node_jsvmapi.h>
-
-using namespace v8;
-using namespace node;
+#include <node_api_helpers.h>
+#include <uv.h>
 
 namespace node_sqlite3 {
 
@@ -72,23 +69,24 @@ typedef Row Parameters;
 
 
 
-class Statement : public Nan::ObjectWrap {
+class Statement : public Napi::ObjectWrap {
 public:
-    static Nan::Persistent<FunctionTemplate> constructor_template;
+    static napi_persistent constructor_template;
 
-    static NAN_MODULE_INIT(Init);
-    static NAN_METHOD(New);
+    static NAPI_MODULE_INIT(Init);
+    static NAPI_METHOD(New);
 
     struct Baton {
         uv_work_t request;
         Statement* stmt;
-        Nan::Persistent<Function> callback;
+        napi_persistent callback;
         Parameters parameters;
 
-        Baton(Statement* stmt_, Local<Function> cb_) : stmt(stmt_) {
+        Baton(Statement* stmt_, napi_value cb_) : stmt(stmt_) {
             stmt->Ref();
             request.data = this;
-            callback.Reset(cb_);
+            napi_env env = napi_get_current_env();
+            callback = napi_create_persistent(env, cb_);
         }
         virtual ~Baton() {
             for (unsigned int i = 0; i < parameters.size(); i++) {
@@ -96,25 +94,25 @@ public:
                 DELETE_FIELD(field);
             }
             stmt->Unref();
-            callback.Reset();
+            napi_release_persistent(napi_get_current_env(), callback);
         }
     };
 
     struct RowBaton : Baton {
-        RowBaton(Statement* stmt_, Local<Function> cb_) :
+        RowBaton(Statement* stmt_, napi_value cb_) :
             Baton(stmt_, cb_) {}
         Row row;
     };
 
     struct RunBaton : Baton {
-        RunBaton(Statement* stmt_, Local<Function> cb_) :
+        RunBaton(Statement* stmt_, napi_value cb_) :
             Baton(stmt_, cb_), inserted_id(0), changes(0) {}
         sqlite3_int64 inserted_id;
         int changes;
     };
 
     struct RowsBaton : Baton {
-        RowsBaton(Statement* stmt_, Local<Function> cb_) :
+        RowsBaton(Statement* stmt_, napi_value cb_) :
             Baton(stmt_, cb_) {}
         Rows rows;
     };
@@ -122,20 +120,20 @@ public:
     struct Async;
 
     struct EachBaton : Baton {
-        Nan::Persistent<Function> completed;
+        napi_persistent completed;
         Async* async; // Isn't deleted when the baton is deleted.
 
-        EachBaton(Statement* stmt_, Local<Function> cb_) :
+        EachBaton(Statement* stmt_, napi_value cb_) :
             Baton(stmt_, cb_) {}
         virtual ~EachBaton() {
-            completed.Reset();
+            napi_release_persistent(napi_get_current_env(), completed);
         }
     };
 
     struct PrepareBaton : Database::Baton {
         Statement* stmt;
         std::string sql;
-        PrepareBaton(Database* db_, Local<Function> cb_, Statement* stmt_) :
+        PrepareBaton(Database* db_, napi_value cb_, Statement* stmt_) :
             Baton(db_, cb_), stmt(stmt_) {
             stmt->Ref();
         }
@@ -167,8 +165,8 @@ public:
 
         // Store the callbacks here because we don't have
         // access to the baton in the async callback.
-        Nan::Persistent<Function> item_cb;
-        Nan::Persistent<Function> completed_cb;
+        napi_persistent item_cb;
+        napi_persistent completed_cb;
 
         Async(Statement* st, uv_async_cb async_cb) :
                 stmt(st), completed(false), retrieved(0) {
@@ -180,13 +178,13 @@ public:
 
         ~Async() {
             stmt->Unref();
-            item_cb.Reset();
-            completed_cb.Reset();
+            napi_env env = napi_get_current_env();
+            napi_release_persistent(env, completed_cb);
             NODE_SQLITE3_MUTEX_DESTROY
         }
     };
 
-    Statement(Database* db_) : Nan::ObjectWrap(),
+    Statement(Database* db_) : Napi::ObjectWrap(),
             db(db_),
             _handle(NULL),
             status(SQLITE_OK),
@@ -207,7 +205,7 @@ public:
     WORK_DEFINITION(Each);
     WORK_DEFINITION(Reset);
 
-    static NAN_METHOD(Finalize);
+    static NAPI_METHOD(Finalize);
 
 protected:
     static void Work_BeginPrepare(Database::Baton* baton);
@@ -220,12 +218,12 @@ protected:
     static void Finalize(Baton* baton);
     void Finalize();
 
-    template <class T> inline Values::Field* BindParameter(const Local<Value> source, T pos);
-    template <class T> T* Bind(Nan::NAN_METHOD_ARGS_TYPE info, int start = 0, int end = -1);
+    template <class T> inline Values::Field* BindParameter(napi_env env, const napi_value source, T pos);
+    template <class T> T* Bind(napi_env env, napi_func_cb_info info, int start = 0, int end = -1);
     bool Bind(const Parameters &parameters);
 
     static void GetRow(Row* row, sqlite3_stmt* stmt);
-    static Local<Object> RowToJS(Row* row);
+    static napi_value RowToJS(Row* row);
     void Schedule(Work_Callback callback, Baton* baton);
     void Process();
     void CleanQueue();
