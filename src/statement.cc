@@ -10,17 +10,19 @@ using namespace node_sqlite3;
 napi_persistent Statement::constructor_template;
 
 NAPI_MODULE_INIT(Statement::Init) {
-    napi_method_descriptor methods [] = {
-        { Bind, "bind" },
-        { Get, "get" },
-        { Run, "run" },
-        { All, "all" },
-        { Each, "each" },
-        { Reset, "reset" },
-        { Finalize, "finalize" }
+    napi_property_descriptor methods [] = {
+        { "bind", Bind },
+        { "get", Get},
+        { "run", Run },
+        { "all", All },
+        { "each", Each },
+        { "reset", Reset },
+        { "finalize", Finalize }
     };
 
-    napi_value ctor = napi_create_constructor_for_wrap_with_methods(env, constructor_template, New, "Statement", 7, methods);
+    napi_value ctor = napi_create_constructor(env, "Statement", New, nullptr, 7, methods);
+
+    constructor_template = napi_create_persistent(env, ctor);
 
     Napi::Set(exports, "Statement", ctor);
 }
@@ -189,7 +191,7 @@ template <class T> Values::Field*
     }
 }
 
-template <class T> T* Statement::Bind(napi_env env, napi_func_cb_info info, int start, int last) {
+template <class T> T* Statement::Bind(napi_env env, napi_callback_info info, int start, int last) {
     Napi::HandleScope scope;
 
     int len = Napi::Length(info);

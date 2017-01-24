@@ -24,7 +24,7 @@ public:
     static inline bool HasInstance(napi_value val) {
         Napi::HandleScope scope;
         if (!Napi::IsObject(val)) return false;
-        return Napi::HasInstance(constructor_template, val);
+        return Napi::HasInstance(Napi::New(constructor_template), val);
     }
 
     struct Baton {

@@ -219,7 +219,7 @@ protected:
     void Finalize();
 
     template <class T> inline Values::Field* BindParameter(napi_env env, const napi_value source, T pos);
-    template <class T> T* Bind(napi_env env, napi_func_cb_info info, int start = 0, int end = -1);
+    template <class T> T* Bind(napi_env env, napi_callback_info info, int start = 0, int end = -1);
     bool Bind(const Parameters &parameters);
 
     static void GetRow(Row* row, sqlite3_stmt* stmt);

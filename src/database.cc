@@ -9,18 +9,20 @@ using namespace node_sqlite3;
 napi_persistent Database::constructor_template;
 
 NAPI_MODULE_INIT(Database::Init) {
-    napi_method_descriptor methods[] = {
-        { Database::Close, "close" },
-        { Database::Exec, "exec" },
-        { Database::Wait, "wait" },
-        { Database::LoadExtension, "loadExtension" },
-        { Database::Serialize, "serialize" },
-        { Database::Parallelize, "parallelize" },
-        { Database::Configure, "configure" },
-        { Database::OpenGetter, "open" },
+    napi_property_descriptor methods[] = {
+        { "close", Close },
+        { "exec", Exec },
+        { "wait", Wait },
+        { "loadExtension", LoadExtension },
+        { "serialize", Serialize },
+        { "parallelize", Parallelize },
+        { "configure", Configure },
+        { "open", nullptr, OpenGetter, nullptr },
     };
 
-    napi_value ctor = napi_create_constructor_for_wrap_with_methods(env, constructor_template, Database::New, "Database", 8, methods);
+    napi_value ctor = napi_create_constructor(env, "Database", Database::New, nullptr, 8, methods);
+
+    constructor_template = napi_create_persistent(env, ctor);
 
     Napi::Set(exports, "Database", ctor);
 }
