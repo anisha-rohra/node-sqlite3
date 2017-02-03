@@ -21,10 +21,10 @@ public:
     static napi_persistent constructor_template;
     static NAPI_MODULE_INIT(Init);
 
-    static inline bool HasInstance(napi_value val) {
+    static inline bool HasInstance(napi_env env, napi_value val) {
         Napi::HandleScope scope;
-        if (!Napi::IsObject(val)) return false;
-        return Napi::HasInstance(Napi::New(constructor_template), val);
+        if (!Napi::IsObject(env, val)) return false;
+        return Napi::HasInstance(env, Napi::New(env, constructor_template), val);
     }
 
     struct Baton {

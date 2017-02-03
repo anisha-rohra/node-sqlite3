@@ -24,7 +24,7 @@ NAPI_MODULE_INIT(Statement::Init) {
 
     constructor_template = napi_create_persistent(env, ctor);
 
-    Napi::Set(exports, "Statement", ctor);
+    Napi::Set(env, exports, "Statement", ctor);
 }
 
 void Statement::Process() {
@@ -56,20 +56,21 @@ void Statement::Schedule(Work_Callback callback, Baton* baton) {
 
 template <class T> void Statement::Error(T* baton) {
     Napi::HandleScope scope;
+    napi_env env = napi_get_current_env();
 
     Statement* stmt = baton->stmt;
     // Fail hard on logic errors.
     assert(stmt->status != 0);
-    EXCEPTION(Napi::New(stmt->message.c_str()), stmt->status, exception);
+    EXCEPTION(Napi::New(env, stmt->message.c_str()), stmt->status, exception);
 
-    napi_value cb = Napi::New(baton->callback);
+    napi_value cb = Napi::New(env, baton->callback);
 
-    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+    if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
         napi_value argv[] = { exception };
         TRY_CATCH_CALL(stmt->handle(), cb, 1, argv);
     }
     else {
-        napi_value argv[] = { Napi::New("error"), exception };
+        napi_value argv[] = { Napi::New(env, "error"), exception };
         EMIT_EVENT(stmt->handle(), 2, argv);
     }
 }
@@ -77,26 +78,26 @@ template <class T> void Statement::Error(T* baton) {
 // { Database db, String sql, Array params, Function callback }
 NAPI_METHOD(Statement::New) {
     if (!napi_is_construct_call(env, info)) {
-        return Napi::ThrowTypeError("Use the new operator to create new Statement objects");
+        return Napi::ThrowTypeError(env, "Use the new operator to create new Statement objects");
     }
 
     GET_ARGUMENTS(3);
-    int length = Napi::Length(info);
-    if (length <= 0 || !Database::HasInstance(args[0])) {
-        return Napi::ThrowTypeError("Database object expected");
+    int length = Napi::Length(env, info);
+    if (length <= 0 || !Database::HasInstance(env, args[0])) {
+        return Napi::ThrowTypeError(env, "Database object expected");
     }
-    else if (length <= 1 || !Napi::IsString(args[1])) {
-        return Napi::ThrowTypeError("SQL query expected");
+    else if (length <= 1 || !Napi::IsString(env, args[1])) {
+        return Napi::ThrowTypeError(env, "SQL query expected");
     }
-    else if (length > 2 && !Napi::IsUndefined(args[2]) && !Napi::IsFunction(args[2])) {
-        return Napi::ThrowTypeError("Callback expected");
+    else if (length > 2 && !Napi::IsUndefined(env, args[2]) && !Napi::IsFunction(env, args[2])) {
+        return Napi::ThrowTypeError(env, "Callback expected");
     }
 
     Database* db = Napi::ObjectWrap::Unwrap<Database>(args[0]);
     napi_value sql = args[1];
 
     napi_value _this = napi_get_cb_this(env, info);
-    Napi::Set(_this, Napi::New("sql"), sql);
+    Napi::Set(env, _this, Napi::New(env, "sql"), sql);
 
     Statement* stmt = new Statement(db);
     stmt->Wrap(_this);
@@ -151,9 +152,9 @@ void Statement::Work_AfterPrepare(uv_work_t* req) {
     }
     else {
         stmt->prepared = true;
-        napi_value cb = Napi::New(baton->callback);
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
-            napi_value argv[] = { Napi::Null() };
+        napi_value cb = Napi::New(env, baton->callback);
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
+            napi_value argv[] = { Napi::Null(env) };
             TRY_CATCH_CALL(stmt->handle(), cb, 1, argv);
         }
     }
@@ -163,28 +164,28 @@ void Statement::Work_AfterPrepare(uv_work_t* req) {
 
 template <class T> Values::Field*
                    Statement::BindParameter(napi_env env, const napi_value source, T pos) {
-    if (Napi::IsString(source) || Napi::IsRegExp(source)) {
+    if (Napi::IsString(env, source) || Napi::IsRegExp(env, source)) {
         Napi::Utf8String val(source);
         return new Values::Text(pos, val.length(), *val);
     }
-    else if (Napi::IsInt32(source)) {
-        return new Values::Integer(pos, Napi::To<int32_t>(source));
+    else if (Napi::IsNumber(env, source)) {
+        return new Values::Integer(pos, Napi::To<int32_t>(env, source));
     }
-    else if (Napi::IsNumber(source)) {
-        return new Values::Float(pos, Napi::To<double>(source));
+    else if (Napi::IsNumber(env, source)) {
+        return new Values::Float(pos, Napi::To<double>(env, source));
     }
-    else if (Napi::IsBoolean(source)) {
-        return new Values::Integer(pos, Napi::To<bool>(source) ? 1 : 0);
+    else if (Napi::IsBoolean(env, source)) {
+        return new Values::Integer(pos, Napi::To<bool>(env, source) ? 1 : 0);
     }
-    else if (Napi::IsNull(source)) {
+    else if (Napi::IsNull(env, source)) {
         return new Values::Null(pos);
     }
     else if (napi_buffer_has_instance(env, source)) {
-        napi_value buffer = Napi::ToObject(source);
+        napi_value buffer = Napi::ToObject(env, source);
         return new Values::Blob(pos, napi_buffer_length(env, buffer), napi_buffer_data(env, buffer));
     }
-    else if (Napi::IsDate(source)) {
-        return new Values::Float(pos, Napi::To<double>(source));
+    else if (Napi::IsDate(env, source)) {
+        return new Values::Float(pos, Napi::To<double>(env, source));
     }
     else {
         return NULL;
@@ -194,13 +195,13 @@ template <class T> Values::Field*
 template <class T> T* Statement::Bind(napi_env env, napi_callback_info info, int start, int last) {
     Napi::HandleScope scope;
 
-    int len = Napi::Length(info);
+    int len = Napi::Length(env, info);
     napi_value* args = new napi_value[len];
     napi_get_cb_args(env, info, args, len);
 
     if (last < 0) last = len;
-    napi_value callback = Napi::Value();
-    if (last > start && Napi::IsFunction(args[last - 1])) {
+    napi_value callback = Napi::New(env);
+    if (last > start && Napi::IsFunction(env, args[last - 1])) {
         callback = (args[last - 1]);
         last--;
     }
@@ -208,34 +209,34 @@ template <class T> T* Statement::Bind(napi_env env, napi_callback_info info, int
     T* baton = new T(this, callback);
 
     if (start < last) {
-        if (Napi::IsArray(args[start])) {
+        if (Napi::IsArray(env, args[start])) {
             napi_value array = args[start];
-            int length = Napi::Length(array);
+            int length = Napi::Length(env, array);
             // Note: bind parameters start with 1.
             for (int i = 0, pos = 1; i < length; i++, pos++) {
-                baton->parameters.push_back(BindParameter(env, Napi::Get(array, i), pos));
+                baton->parameters.push_back(BindParameter(env, Napi::Get(env, array, i), pos));
             }
         }
-        else if (!Napi::IsObject(args[start]) || Napi::IsRegExp(args[start]) || Napi::IsDate(args[start]) || napi_buffer_has_instance(env, args[start])) {
+        else if (!Napi::IsObject(env, args[start]) || Napi::IsRegExp(env, args[start]) || Napi::IsDate(env, args[start]) || napi_buffer_has_instance(env, args[start])) {
             // Parameters directly in array.
             // Note: bind parameters start with 1.
             for (int i = start, pos = 1; i < last; i++, pos++) {
                 baton->parameters.push_back(BindParameter(env, args[i], pos));
             }
         }
-        else if (Napi::IsObject(args[start])) {
+        else if (Napi::IsObject(env, args[start])) {
             napi_value object = args[start];
-            napi_value array = Napi::GetPropertyNames(object);
-            int length = Napi::Length(array);
+            napi_value array = Napi::GetPropertyNames(env, object);
+            int length = Napi::Length(env, array);
             for (int i = 0; i < length; i++) {
-                napi_value name = Napi::Get(array, i);
+                napi_value name = Napi::Get(env, array, i);
 
-                if (Napi::IsInt32(name)) {
+                if (Napi::IsNumber(env, name)) {
                     baton->parameters.push_back(
-                        BindParameter(env, Napi::Get(object, name), Napi::To<int32_t>(name)));
+                        BindParameter(env, Napi::Get(env, object, name), Napi::To<int32_t>(env, name)));
                 }
                 else {
-                    baton->parameters.push_back(BindParameter(env, Napi::Get(object, name),
+                    baton->parameters.push_back(BindParameter(env, Napi::Get(env, object, name),
                         *Napi::Utf8String(name)));
                 }
             }
@@ -313,7 +314,7 @@ NAPI_METHOD(Statement::Bind) {
 
     Baton* baton = stmt->Bind<Baton>(env, info);
     if (baton == NULL) {
-        return Napi::ThrowTypeError("Data type is not supported");
+        return Napi::ThrowTypeError(env, "Data type is not supported");
     }
     else {
         stmt->Schedule(Work_BeginBind, baton);
@@ -344,9 +345,9 @@ void Statement::Work_AfterBind(uv_work_t* req) {
     }
     else {
         // Fire callbacks.
-        napi_value cb = Napi::New(baton->callback);
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
-            napi_value argv[] = { Napi::Null() };
+        napi_value cb = Napi::New(env, baton->callback);
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
+            napi_value argv[] = { Napi::Null(env) };
             TRY_CATCH_CALL(stmt->handle(), cb, 1, argv);
         }
     }
@@ -362,7 +363,7 @@ NAPI_METHOD(Statement::Get) {
 
     Baton* baton = stmt->Bind<RowBaton>(env, info);
     if (baton == NULL) {
-        return Napi::ThrowError("Data type is not supported");
+        return Napi::ThrowError(env, "Data type is not supported");
     }
     else {
         stmt->Schedule(Work_BeginGet, baton);
@@ -408,15 +409,15 @@ void Statement::Work_AfterGet(uv_work_t* req) {
     }
     else {
         // Fire callbacks.
-        napi_value cb = Napi::New(baton->callback);
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        napi_value cb = Napi::New(env, baton->callback);
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
             if (stmt->status == SQLITE_ROW) {
                 // Create the result array from the data we acquired.
-                napi_value argv[] = { Napi::Null(), RowToJS(&baton->row) };
+                napi_value argv[] = { Napi::Null(env), RowToJS(&baton->row) };
                 TRY_CATCH_CALL(stmt->handle(), cb, 2, argv);
             }
             else {
-                napi_value argv[] = { Napi::Null() };
+                napi_value argv[] = { Napi::Null(env) };
                 TRY_CATCH_CALL(stmt->handle(), cb, 1, argv);
             }
         }
@@ -431,7 +432,7 @@ NAPI_METHOD(Statement::Run) {
 
     Baton* baton = stmt->Bind<RunBaton>(env, info);
     if (baton == NULL) {
-        return Napi::ThrowError("Data type is not supported");
+        return Napi::ThrowError(env, "Data type is not supported");
     }
     else {
         stmt->Schedule(Work_BeginRun, baton);
@@ -479,12 +480,12 @@ void Statement::Work_AfterRun(uv_work_t* req) {
     }
     else {
         // Fire callbacks.
-        napi_value cb = Napi::New(baton->callback);
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
-            Napi::Set(stmt->handle(), Napi::New("lastID"), Napi::New((double)(baton->inserted_id)));
-            Napi::Set(stmt->handle(), Napi::New("changes"), Napi::New(baton->changes));
+        napi_value cb = Napi::New(env, baton->callback);
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
+            Napi::Set(env, stmt->handle(), Napi::New(env, "lastID"), Napi::New(env, (double)(baton->inserted_id)));
+            Napi::Set(env, stmt->handle(), Napi::New(env, "changes"), Napi::New(env, baton->changes));
 
-            napi_value argv[] = { Napi::Null() };
+            napi_value argv[] = { Napi::Null(env) };
             TRY_CATCH_CALL(stmt->handle(), cb, 1, argv);
         }
     }
@@ -498,7 +499,7 @@ NAPI_METHOD(Statement::All) {
 
     Baton* baton = stmt->Bind<RowsBaton>(env, info);
     if (baton == NULL) {
-        return Napi::ThrowError("Data type is not supported");
+        return Napi::ThrowError(env, "Data type is not supported");
     }
     else {
         stmt->Schedule(Work_BeginAll, baton);
@@ -546,26 +547,26 @@ void Statement::Work_AfterAll(uv_work_t* req) {
     }
     else {
         // Fire callbacks.
-        napi_value cb = Napi::New(baton->callback);
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        napi_value cb = Napi::New(env, baton->callback);
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
             if (baton->rows.size()) {
                 // Create the result array from the data we acquired.
-                napi_value result = Napi::NewArray(baton->rows.size());
+                napi_value result = Napi::NewArray(env, baton->rows.size());
                 Rows::const_iterator it = baton->rows.begin();
                 Rows::const_iterator end = baton->rows.end();
                 for (int i = 0; it < end; ++it, i++) {
-                    Napi::Set(result, i, RowToJS(*it));
+                    Napi::Set(env, result, i, RowToJS(*it));
                     delete *it;
                 }
 
-                napi_value argv[] = { Napi::Null(), result };
+                napi_value argv[] = { Napi::Null(env), result };
                 TRY_CATCH_CALL(stmt->handle(), cb, 2, argv);
             }
             else {
                 // There were no result rows.
                 napi_value argv[] = {
-                    Napi::Null(),
-                    Napi::NewArray(0)
+                    Napi::Null(env),
+                    Napi::NewArray(env, 0)
                 };
                 TRY_CATCH_CALL(stmt->handle(), cb, 2, argv);
             }
@@ -580,19 +581,19 @@ NAPI_METHOD(Statement::Each) {
     Statement* stmt = Napi::ObjectWrap::Unwrap<Statement>(_this);
 
     napi_value* args;
-    int last = Napi::Length(info);
+    int last = Napi::Length(env, info);
     args = (napi_value*) malloc(last * sizeof(napi_value));
     napi_get_cb_args(env, info, args, last);
 
-    napi_value completed = Napi::Value();
-    if (last >= 2 && Napi::IsFunction(args[last - 1]) &&
-        Napi::IsFunction(args[last - 2])) {
+    napi_value completed = Napi::New(env);
+    if (last >= 2 && Napi::IsFunction(env, args[last - 1]) &&
+        Napi::IsFunction(env, args[last - 2])) {
         completed = (args[--last]);
     }
 
     EachBaton* baton = stmt->Bind<EachBaton>(env, info, 0, last);
     if (baton == NULL) {
-        return Napi::ThrowError("Data type is not supported");
+        return Napi::ThrowError(env, "Data type is not supported");
     }
     else {
         baton->completed = napi_create_persistent(env, completed);
@@ -666,6 +667,7 @@ void Statement::CloseCallback(uv_handle_t* handle) {
 
 void Statement::AsyncEach(uv_async_t* handle, int status) {
     Napi::HandleScope scope;
+    napi_env env = napi_get_current_env();
 
     Async* async = static_cast<Async*>(handle->data);
 
@@ -680,10 +682,10 @@ void Statement::AsyncEach(uv_async_t* handle, int status) {
             break;
         }
 
-        napi_value cb = Napi::New(async->item_cb);
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        napi_value cb = Napi::New(env, async->item_cb);
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
             napi_value argv[2];
-            argv[0] = Napi::Null();
+            argv[0] = Napi::Null(env);
 
             Rows::const_iterator it = rows.begin();
             Rows::const_iterator end = rows.end();
@@ -696,13 +698,13 @@ void Statement::AsyncEach(uv_async_t* handle, int status) {
         }
     }
 
-    napi_value cb = Napi::New(async->completed_cb);
+    napi_value cb = Napi::New(env, async->completed_cb);
     if (async->completed) {
-        if (!Napi::IsEmpty(cb) &&
-                Napi::IsFunction(cb)) {
+        if (!Napi::IsEmpty(env, cb) &&
+                Napi::IsFunction(env, cb)) {
             napi_value argv[] = {
-                Napi::Null(),
-                Napi::New(async->retrieved)
+                Napi::Null(env),
+                Napi::New(env, async->retrieved)
             };
             TRY_CATCH_CALL(async->stmt->handle(), cb, 2, argv);
         }
@@ -752,9 +754,9 @@ void Statement::Work_AfterReset(uv_work_t* req) {
     STATEMENT_INIT(Baton);
 
     // Fire callbacks.
-    napi_value cb = Napi::New(baton->callback);
-    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
-        napi_value argv[] = { Napi::Null() };
+    napi_value cb = Napi::New(env, baton->callback);
+    if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
+        napi_value argv[] = { Napi::Null(env) };
         TRY_CATCH_CALL(stmt->handle(), cb, 1, argv);
     }
 
@@ -763,8 +765,8 @@ void Statement::Work_AfterReset(uv_work_t* req) {
 
 napi_value Statement::RowToJS(Row* row) {
     Napi::EscapableHandleScope scope;
-
-    napi_value result = Napi::NewObject();
+    napi_env env = napi_get_current_env();
+    napi_value result = Napi::NewObject(env);
 
     Row::const_iterator it = row->begin();
     Row::const_iterator end = row->end();
@@ -775,22 +777,22 @@ napi_value Statement::RowToJS(Row* row) {
 
         switch (field->type) {
             case SQLITE_INTEGER: {
-                value = Napi::New((double)(((Values::Integer*)field)->value));
+                value = Napi::New(env, (double)(((Values::Integer*)field)->value));
             } break;
             case SQLITE_FLOAT: {
-                value = Napi::New((double)((Values::Float*)field)->value);
+                value = Napi::New(env, (double)((Values::Float*)field)->value);
             } break;
             case SQLITE_TEXT: {
-                value = Napi::New(((Values::Text*)field)->value.c_str(), ((Values::Text*)field)->value.size());
+                value = Napi::New(env, ((Values::Text*)field)->value.c_str(), ((Values::Text*)field)->value.size());
             } break;
             case SQLITE_BLOB: {
-                value = Napi::CopyBuffer(((Values::Blob*)field)->value, ((Values::Blob*)field)->length);
+                value = Napi::CopyBuffer(env, ((Values::Blob*)field)->value, ((Values::Blob*)field)->length);
             } break;
             case SQLITE_NULL: {
-                value = Napi::Null();
+                value = Napi::Null(env);
             } break;
         }
-        Napi::Set(result, Napi::New(field->name.c_str()), value);
+        Napi::Set(env, result, Napi::New(env, field->name.c_str()), value);
 
         DELETE_FIELD(field);
     }
@@ -845,12 +847,13 @@ NAPI_METHOD(Statement::Finalize) {
 
 void Statement::Finalize(Baton* baton) {
     Napi::HandleScope scope;
+    napi_env env = napi_get_current_env();
 
     baton->stmt->Finalize();
 
     // Fire callback in case there was one.
-    napi_value cb = Napi::New(baton->callback);
-    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+    napi_value cb = Napi::New(env, baton->callback);
+    if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
         TRY_CATCH_CALL(baton->stmt->handle(), cb, 0, NULL);
     }
 
@@ -870,11 +873,12 @@ void Statement::Finalize() {
 
 void Statement::CleanQueue() {
     Napi::HandleScope scope;
+    napi_env env = napi_get_current_env();
 
     if (prepared && !queue.empty()) {
         // This statement has already been prepared and is now finalized.
         // Fire error for all remaining items in the queue.
-        EXCEPTION(Napi::New("Statement is already finalized"), SQLITE_MISUSE, exception);
+        EXCEPTION(Napi::New(env, "Statement is already finalized"), SQLITE_MISUSE, exception);
         napi_value argv[] = { exception };
         bool called = false;
 
@@ -883,10 +887,10 @@ void Statement::CleanQueue() {
             Call* call = queue.front();
             queue.pop();
 
-            napi_value cb = Napi::New(call->baton->callback);
+            napi_value cb = Napi::New(env, call->baton->callback);
 
-            if (prepared && !Napi::IsEmpty(cb) &&
-                Napi::IsFunction(cb)) {
+            if (prepared && !Napi::IsEmpty(env, cb) &&
+                Napi::IsFunction(env, cb)) {
                 TRY_CATCH_CALL(handle(), cb, 1, argv);
                 called = true;
             }
@@ -900,7 +904,7 @@ void Statement::CleanQueue() {
         // When we couldn't call a callback function, emit an error on the
         // Statement object.
         if (!called) {
-            napi_value info[] = { Napi::New("error"), exception };
+            napi_value info[] = { Napi::New(env, "error"), exception };
             EMIT_EVENT(handle(), 2, info);
         }
     }

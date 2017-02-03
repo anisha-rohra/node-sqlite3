@@ -24,22 +24,23 @@ NAPI_MODULE_INIT(Database::Init) {
 
     constructor_template = napi_create_persistent(env, ctor);
 
-    Napi::Set(exports, "Database", ctor);
+    Napi::Set(env, exports, "Database", ctor);
 }
 
 void Database::Process() {
     Napi::HandleScope scope;
 
+    napi_env env = napi_get_current_env();
     if (!open && locked && !queue.empty()) {
-        EXCEPTION(Napi::New("Database handle is closed"), SQLITE_MISUSE, exception);
+        EXCEPTION(Napi::New(env, "Database handle is closed"), SQLITE_MISUSE, exception);
         napi_value argv[] = { exception };
         bool called = false;
 
         // Call all callbacks with the error object.
         while (!queue.empty()) {
             Call* call = queue.front();
-            napi_value cb = Napi::New(call->baton->callback);
-            if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+            napi_value cb = Napi::New(env, call->baton->callback);
+            if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
                 TRY_CATCH_CALL(this->handle(), cb, 1, argv);
                 called = true;
             }
@@ -53,7 +54,7 @@ void Database::Process() {
         // When we couldn't call a callback function, emit an error on the
         // Database object.
         if (!called) {
-            napi_value info[] = { Napi::New("error"), exception };
+            napi_value info[] = { Napi::New(env, "error"), exception };
             EMIT_EVENT(handle(), 2, info);
         }
         return;
@@ -78,15 +79,16 @@ void Database::Process() {
 void Database::Schedule(Work_Callback callback, Baton* baton, bool exclusive) {
     Napi::HandleScope scope;
 
+    napi_env env = napi_get_current_env();
     if (!open && locked) {
-        EXCEPTION(Napi::New("Database is closed"), SQLITE_MISUSE, exception);
-        napi_value cb = Napi::New(baton->callback);
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        EXCEPTION(Napi::New(env, "Database is closed"), SQLITE_MISUSE, exception);
+        napi_value cb = Napi::New(env, baton->callback);
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
             napi_value argv[] = { exception };
             TRY_CATCH_CALL(handle(), cb, 1, argv);
         }
         else {
-            napi_value argv[] = { Napi::New("error"), exception };
+            napi_value argv[] = { Napi::New(env, "error"), exception };
             EMIT_EVENT(handle(), 2, argv);
         }
         return;
@@ -103,7 +105,7 @@ void Database::Schedule(Work_Callback callback, Baton* baton, bool exclusive) {
 
 NAPI_METHOD(Database::New) {
     if (!napi_is_construct_call(env, info)) {
-        return Napi::ThrowTypeError("Use the new operator to create new Database objects");
+        return Napi::ThrowTypeError(env, "Use the new operator to create new Database objects");
     }
 
     GET_ARGUMENTS(3);
@@ -111,14 +113,14 @@ NAPI_METHOD(Database::New) {
     int pos = 1;
 
     int mode;
-    if (Napi::Length(info) >= pos && Napi::IsInt32(args[pos])) {
-        mode = Napi::To<int>(args[pos++]);
+    if (Napi::Length(env, info) >= pos && Napi::IsNumber(env, args[pos])) {
+        mode = Napi::To<int>(env, args[pos++]);
     } else {
         mode = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
     }
 
-    napi_value callback = Napi::Value();
-    if (Napi::Length(info) >= pos && Napi::IsFunction(args[pos])) {
+    napi_value callback = Napi::New(env);
+    if (Napi::Length(env, info) >= pos && Napi::IsFunction(env, args[pos])) {
         callback = (args[pos++]);
     }
 
@@ -126,8 +128,8 @@ NAPI_METHOD(Database::New) {
     Database* db = new Database();
     db->Wrap(_this);
 
-    Napi::Set(_this, Napi::New("filename"), args[0]);
-    Napi::Set(_this, Napi::New("mode"), Napi::New(mode));
+    Napi::Set(env, _this, Napi::New(env, "filename"), args[0]);
+    Napi::Set(env, _this, Napi::New(env, "mode"), Napi::New(env, mode));
 
     // Start opening the database.
     OpenBaton* baton = new OpenBaton(db, callback, *filename, mode);
@@ -170,28 +172,29 @@ void Database::Work_AfterOpen(uv_work_t* req) {
     OpenBaton* baton = static_cast<OpenBaton*>(req->data);
     Database* db = baton->db;
 
+    napi_env env = napi_get_current_env();
     napi_value argv[1];
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
+        EXCEPTION(Napi::New(env, baton->message.c_str()), baton->status, exception);
         argv[0] = exception;
     }
     else {
         db->open = true;
-        argv[0] = Napi::Null();
+        argv[0] = Napi::Null(env);
     }
 
-    napi_value cb = Napi::New(baton->callback);
+    napi_value cb = Napi::New(env, baton->callback);
 
-    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+    if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
     else if (!db->open) {
-        napi_value info[] = { Napi::New("error"), argv[0] };
+        napi_value info[] = { Napi::New(env, "error"), argv[0] };
         EMIT_EVENT(db->handle(), 2, info);
     }
 
     if (db->open) {
-        napi_value info[] = { Napi::New("open") };
+        napi_value info[] = { Napi::New(env, "open") };
         EMIT_EVENT(db->handle(), 1, info);
         db->Process();
     }
@@ -202,7 +205,7 @@ void Database::Work_AfterOpen(uv_work_t* req) {
 NAPI_METHOD(Database::OpenGetter) {
     napi_value _this = napi_get_cb_this(env, info);
     Database* db = Napi::ObjectWrap::Unwrap<Database>(_this);
-    napi_set_return_value(env, info, Napi::New(db->open));
+    napi_set_return_value(env, info, Napi::New(env, db->open));
 }
 
 NAPI_METHOD(Database::Close) {
@@ -250,31 +253,32 @@ void Database::Work_AfterClose(uv_work_t* req) {
     Baton* baton = static_cast<Baton*>(req->data);
     Database* db = baton->db;
 
+    napi_env env = napi_get_current_env();
     napi_value argv[1];
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
+        EXCEPTION(Napi::New(env, baton->message.c_str()), baton->status, exception);
         argv[0] = exception;
     }
     else {
         db->open = false;
         // Leave db->locked to indicate that this db object has reached
         // the end of its life.
-        argv[0] = Napi::Null();
+        argv[0] = Napi::Null(env);
     }
 
-    napi_value cb = Napi::New(baton->callback);
+    napi_value cb = Napi::New(env, baton->callback);
 
     // Fire callbacks.
-    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+    if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
     else if (db->open) {
-        napi_value info[] = { Napi::New("error"), argv[0] };
+        napi_value info[] = { Napi::New(env, "error"), argv[0] };
         EMIT_EVENT(db->handle(), 2, info);
     }
 
     if (!db->open) {
-        napi_value info[] = { Napi::New("close"), argv[0] };
+        napi_value info[] = { Napi::New(env, "close"), argv[0] };
         EMIT_EVENT(db->handle(), 1, info);
         db->Process();
     }
@@ -292,7 +296,7 @@ NAPI_METHOD(Database::Serialize) {
     bool before = db->serialize;
     db->serialize = true;
 
-    if (!Napi::IsEmpty(callback) && Napi::IsFunction(callback)) {
+    if (!Napi::IsEmpty(env, callback) && Napi::IsFunction(env, callback)) {
         TRY_CATCH_CALL(_this, callback, 0, NULL);
         db->serialize = before;
     }
@@ -312,7 +316,7 @@ NAPI_METHOD(Database::Parallelize) {
     bool before = db->serialize;
     db->serialize = false;
 
-    if (!Napi::IsEmpty(callback) && Napi::IsFunction(callback)) {
+    if (!Napi::IsEmpty(env, callback) && Napi::IsFunction(env, callback)) {
         TRY_CATCH_CALL(_this, callback, 0, NULL);
         db->serialize = before;
     }
@@ -329,29 +333,30 @@ NAPI_METHOD(Database::Configure) {
     REQUIRE_ARGUMENTS(2);
     GET_ARGUMENTS(2);
 
-    if (Napi::Equals(args[0], Napi::New("trace"))) {
-        napi_value handle = Napi::Value();
+    if (Napi::Equals(env, args[0], Napi::New(env, "trace"))) {
+        napi_value handle = Napi::New(env);
         Baton* baton = new Baton(db, handle);
         db->Schedule(RegisterTraceCallback, baton);
     }
-    else if (Napi::Equals(args[0], Napi::New("profile"))) {
-        napi_value handle = Napi::Value();
+    else if (Napi::Equals(env, args[0], Napi::New(env, "profile"))) {
+        napi_value handle = Napi::New(env);
         Baton* baton = new Baton(db, handle);
         db->Schedule(RegisterProfileCallback, baton);
     }
-    else if (Napi::Equals(args[0], Napi::New("busyTimeout"))) {
-        if (!Napi::IsInt32(args[1])) {
-            return Napi::ThrowTypeError("Value must be an integer");
+    else if (Napi::Equals(env, args[0], Napi::New(env, "busyTimeout"))) {
+        if (!Napi::IsNumber(env, args[1])) {
+            return Napi::ThrowTypeError(env, "Value must be an integer");
         }
-        napi_value handle = Napi::Value();
+        napi_value handle = Napi::New(env);
         Baton* baton = new Baton(db, handle);
-        baton->status = Napi::To<int>(args[1]);
+        baton->status = Napi::To<int>(env, args[1]);
         db->Schedule(SetBusyTimeout, baton);
     }
     else {
-        return Napi::ThrowError(Napi::StringConcat(
-            Napi::ToString(Napi::New(args[0])),
-            Napi::New(" is not a valid configuration option")
+        return Napi::ThrowError(env, Napi::StringConcat(
+            env,
+            Napi::ToString(env, Napi::New(env, args[0])),
+            Napi::New(env, " is not a valid configuration option")
         ));
     }
 
@@ -400,9 +405,10 @@ void Database::TraceCallback(Database* db, std::string* sql) {
     // Note: This function is called in the main V8 thread.
     Napi::HandleScope scope;
 
+    napi_env env = napi_get_current_env();
     napi_value argv[] = {
-        Napi::New("trace"),
-        Napi::New(sql->c_str())
+        Napi::New(env, "trace"),
+        Napi::New(env, sql->c_str())
     };
     EMIT_EVENT(db->handle(), 2, argv);
     delete sql;
@@ -440,10 +446,11 @@ void Database::ProfileCallback(void* db, const char* sql, sqlite3_uint64 nsecs) 
 void Database::ProfileCallback(Database *db, ProfileInfo* info) {
     Napi::HandleScope scope;
 
+    napi_env env = napi_get_current_env();
     napi_value argv[] = {
-        Napi::New("profile"),
-        Napi::New(info->sql.c_str()),
-        Napi::New((double)info->nsecs / 1000000.0)
+        Napi::New(env, "profile"),
+        Napi::New(env, info->sql.c_str()),
+        Napi::New(env, (double)info->nsecs / 1000000.0)
     };
     EMIT_EVENT(db->handle(), 3, argv);
     delete info;
@@ -484,11 +491,12 @@ void Database::UpdateCallback(void* db, int type, const char* database,
 void Database::UpdateCallback(Database *db, UpdateInfo* info) {
     Napi::HandleScope scope;
 
+    napi_env env = napi_get_current_env();
     napi_value argv[] = {
-        Napi::New(sqlite_authorizer_string(info->type)),
-        Napi::New(info->database.c_str()),
-        Napi::New(info->table.c_str()),
-        Napi::New((double)(info->rowid))
+        Napi::New(env, sqlite_authorizer_string(info->type)),
+        Napi::New(env, info->database.c_str()),
+        Napi::New(env, info->table.c_str()),
+        Napi::New(env, (double)(info->rowid))
     };
     EMIT_EVENT(db->handle(), 4, argv);
     delete info;
@@ -542,22 +550,23 @@ void Database::Work_AfterExec(uv_work_t* req) {
     ExecBaton* baton = static_cast<ExecBaton*>(req->data);
     Database* db = baton->db;
 
-    napi_value cb = Napi::New(baton->callback);
+    napi_env env = napi_get_current_env();
+    napi_value cb = Napi::New(env, baton->callback);
 
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
+        EXCEPTION(Napi::New(env, baton->message.c_str()), baton->status, exception);
 
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
             napi_value argv[] = { exception };
             TRY_CATCH_CALL(db->handle(), cb, 1, argv);
         }
         else {
-            napi_value info[] = { Napi::New("error"), exception };
+            napi_value info[] = { Napi::New(env, "error"), exception };
             EMIT_EVENT(db->handle(), 2, info);
         }
     }
-    else if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
-        napi_value argv[] = { Napi::Null() };
+    else if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
+        napi_value argv[] = { Napi::Null(env) };
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
 
@@ -587,9 +596,10 @@ void Database::Work_Wait(Baton* baton) {
     assert(baton->db->_handle);
     assert(baton->db->pending == 0);
 
-    napi_value cb = Napi::New(baton->callback);
-    if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
-        napi_value argv[] = { Napi::Null() };
+    napi_env env = napi_get_current_env();
+    napi_value cb = Napi::New(env, baton->callback);
+    if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
+        napi_value argv[] = { Napi::Null(env) };
         TRY_CATCH_CALL(baton->db->handle(), cb, 1, argv);
     }
 
@@ -646,24 +656,25 @@ void Database::Work_LoadExtension(uv_work_t* req) {
 void Database::Work_AfterLoadExtension(uv_work_t* req) {
     Napi::HandleScope scope;
 
+    napi_env env = napi_get_current_env();
     LoadExtensionBaton* baton = static_cast<LoadExtensionBaton*>(req->data);
     Database* db = baton->db;
-    napi_value cb = Napi::New(baton->callback);
+    napi_value cb = Napi::New(env, baton->callback);
 
     if (baton->status != SQLITE_OK) {
-        EXCEPTION(Napi::New(baton->message.c_str()), baton->status, exception);
+        EXCEPTION(Napi::New(env, baton->message.c_str()), baton->status, exception);
 
-        if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
+        if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
             napi_value argv[] = { exception };
             TRY_CATCH_CALL(db->handle(), cb, 1, argv);
         }
         else {
-            napi_value info[] = { Napi::New("error"), exception };
+            napi_value info[] = { Napi::New(env, "error"), exception };
             EMIT_EVENT(db->handle(), 2, info);
         }
     }
-    else if (!Napi::IsEmpty(cb) && Napi::IsFunction(cb)) {
-        napi_value argv[] = { Napi::Null() };
+    else if (!Napi::IsEmpty(env, cb) && Napi::IsFunction(env, cb)) {
+        napi_value argv[] = { Napi::Null(env) };
         TRY_CATCH_CALL(db->handle(), cb, 1, argv);
     }
 

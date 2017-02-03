@@ -9,37 +9,38 @@ const char* sqlite_authorizer_string(int type);
     napi_get_cb_args(env, info, args, n);
 
 #define REQUIRE_ARGUMENTS(n)                                                   \
-    if (Napi::Length(info) < (n)) {                                            \
-        return Napi::ThrowTypeError("Expected " #n "arguments");               \
+    if (Napi::Length(env, info) < (n)) {                                       \
+        return Napi::ThrowTypeError(env, "Expected " #n "arguments");          \
     }
 
 
 #define REQUIRE_ARGUMENT_EXTERNAL(i, var)                                      \
-    if (Napi::Length(info) <= (i) || !Napi::IsExternal(args[i])) {             \
-        return Napi::ThrowTypeError("Argument " #i " invalid");                \
+    if (Napi::Length(env, info) <= (i) || !Napi::IsExternal(env, args[i])) {   \
+        return Napi::ThrowTypeError(env, "Argument " #i " invalid");           \
     }                                                                          \
     napi_value var = args[i];
 
 
 #define REQUIRE_ARGUMENT_FUNCTION(i, var)                                      \
-    if (Napi::Length(info) <= (i) || !Napi::IsFunction(args[i])) {             \
-        return Napi::ThrowTypeError("Argument " #i " must be a function");     \
+    if (Napi::Length(env, info) <= (i) || !Napi::IsFunction(env, args[i])) {   \
+        return Napi::ThrowTypeError(env, "Argument " #i " must be a function");\
     }                                                                          \
     napi_value var = args[i];
 
 
 #define REQUIRE_ARGUMENT_STRING(i, var)                                        \
-    if (Napi::Length(info) <= (i) || !Napi::IsString(args[i])) {               \
-        return Napi::ThrowTypeError("Argument " #i " must be a string");       \
+    if (Napi::Length(env, info) <= (i) || !Napi::IsString(env, args[i])) {     \
+        return Napi::ThrowTypeError(env, "Argument " #i " must be a string");  \
     }                                                                          \
     Napi::Utf8String var(args[i]);
 
 
 #define OPTIONAL_ARGUMENT_FUNCTION(i, var)                                     \
-    napi_value var = Napi::Value();                                            \
-    if (Napi::Length(info) > i && !Napi::IsUndefined(args[i])) {               \
-        if (!Napi::IsFunction(args[i])) {                                      \
-            return Napi::ThrowTypeError("Argument " #i " must be a function"); \
+    napi_value var = Napi::New(env);                                           \
+    if (Napi::Length(env, info) > i && !Napi::IsUndefined(env, args[i])) {     \
+        if (!Napi::IsFunction(env, args[i])) {                                 \
+            return Napi::ThrowTypeError(env,                                   \
+                                        "Argument " #i " must be a function"); \
         }                                                                      \
         var = args[i];                                                         \
     }
@@ -47,14 +48,14 @@ const char* sqlite_authorizer_string(int type);
 
 #define OPTIONAL_ARGUMENT_INTEGER(i, var, default)                             \
     int var;                                                                   \
-    if (Napi::Length(info) <= (i)) {                                           \
+    if (Napi::Length(env, info) <= (i)) {                                      \
         var = (default);                                                       \
     }                                                                          \
-    else if (Napi::IsInt32(args[i])) {                                         \
-        var = Napi::To<int32_t>(args[i]);                                      \
+    else if (Napi::IsInt32(env, args[i])) {                                    \
+        var = Napi::To<int32_t>(env, args[i]);                                 \
     }                                                                          \
     else {                                                                     \
-        return Napi::ThrowTypeError("Argument " #i " must be an integer");     \
+        return Napi::ThrowTypeError(env, "Argument " #i " must be an integer");\
     }
 
 
@@ -72,47 +73,46 @@ const char* sqlite_authorizer_string(int type);
 
 
 #define NODE_SET_GETTER(target, name, function)                                \
-    Napi::SetAccessor((target)->InstanceTemplate(),                            \
-        Napi::New(name), (function));
+    Napi::SetAccessor(env, (target)->InstanceTemplate(),                       \
+        Napi::New(env, name), (function));
 
 #define GET_STRING(source, name, property)                                     \
-    Napi::Utf8String name(Napi::Get(source,                                    \
-        Napi::New(property)));
+    Napi::Utf8String name(Napi::Get(env, source,                               \
+        Napi::New(env, property)));
 
 #define GET_INTEGER(source, name, prop)                                        \
-    int name = Napi::To<int>(Napi::Get(source,                                 \
-        Napi::New(property)));
+    int name = Napi::To<int>(env, Napi::Get(env, source,                       \
+        Napi::New(env, property)));
 
 #define EXCEPTION(msg, errno, name)                                            \
-    napi_value name = Napi::Error(                                             \
-        Napi::StringConcat(                                                    \
-            Napi::StringConcat(                                                \
-                Napi::New(sqlite_code_string(errno)),                          \
-                Napi::New(": ")                                                \
+    napi_value name = Napi::Error(env,                                         \
+        Napi::StringConcat(env,                                                \
+            Napi::StringConcat(env,                                            \
+                Napi::New(env, sqlite_code_string(errno)),                     \
+                Napi::New(env, ": ")                                           \
             ),                                                                 \
             (msg)                                                              \
         )                                                                      \
     );                                                                         \
     napi_value name ##_obj = name;                                             \
-    Napi::Set(name ##_obj, Napi::New("errno"), Napi::New(errno));              \
-    Napi::Set(name ##_obj, Napi::New("code"),                                  \
-        Napi::New(sqlite_code_string(errno)));
+    Napi::Set(env, name ##_obj, "errno", Napi::New(env, errno));               \
+    Napi::Set(env, name ##_obj, "code",                                        \
+        Napi::New(env, sqlite_code_string(errno)));
 
 
 #define EMIT_EVENT(obj, argc, argv)                                            \
     TRY_CATCH_CALL((obj),                                                      \
-        Napi::Get(obj,                                                         \
-            Napi::New("emit")),                                                \
+        Napi::Get(env, obj, "emit"),                                           \
         argc, argv                                                             \
     );
 
 #define TRY_CATCH_CALL(context, callback, argc, argv)                          \
-    Napi::MakeCallback((context), (callback), (argc), (argv))
+    Napi::MakeCallback(env, (context), (callback), (argc), (argv))
 
 #define WORK_DEFINITION(name)                                                  \
     static NAPI_METHOD(name);                                                  \
     static void Work_Begin##name(Baton* baton);                                \
-    static void Work_##name(uv_work_t* req);                                    \
+    static void Work_##name(uv_work_t* req);                                   \
     static void Work_After##name(uv_work_t* req);
 
 #define STATEMENT_BEGIN(type)                                                  \
@@ -129,6 +129,7 @@ const char* sqlite_authorizer_string(int type);
     assert(status == 0);
 
 #define STATEMENT_INIT(type)                                                   \
+    napi_env env = napi_get_current_env();                                     \
     type* baton = static_cast<type*>(req->data);                               \
     Statement* stmt = baton->stmt;
 
