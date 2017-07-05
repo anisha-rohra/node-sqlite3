@@ -46,7 +46,7 @@
     },
     "scripts": {
         "prepublish":"npm ls",
-        "preinstall":"npm install node-pre-gyp",
+        "preinstall":"npm install node-pre-gyp node-addon-api",
         "install": "node-pre-gyp install --fallback-to-build",
         "pretest": "node test/support/createdb.js",
         "test": "mocha -R spec --timeout 480000"
