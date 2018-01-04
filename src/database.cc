@@ -114,14 +114,14 @@ Database::Database(const Napi::CallbackInfo& info) : Napi::ObjectWrap<Database>(
     int pos = 1;
 
     int mode;
-    if (info.Length() >= pos && info[pos].IsNumber()) {
+    if (info.Length() >= (unsigned)pos && info[pos].IsNumber()) {
         mode = info[pos++].As<Napi::Number>().Int32Value();
     } else {
         mode = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
     }
 
     Napi::Function callback;
-    if (info.Length() >= pos && info[pos].IsFunction()) {
+    if (info.Length() >= (unsigned)pos && info[pos].IsFunction()) {
         callback = info[pos++].As<Napi::Function>();
     }
 
@@ -292,7 +292,9 @@ Napi::Value Database::Serialize(const Napi::CallbackInfo& info) {
     db->serialize = true;
 
     if (!callback.IsUndefined() && callback.IsFunction()) {
-        TRY_CATCH_CALL(info.This(), callback, 0, NULL);
+        //TRY_CATCH_CALL(info.This(), callback, 0, NULL);
+        std::vector<napi_value> args;
+        (callback).MakeCallback(Napi::Value(info.This()), args);
         db->serialize = before;
     }
 
@@ -310,7 +312,9 @@ Napi::Value Database::Parallelize(const Napi::CallbackInfo& info) {
     db->serialize = false;
 
     if (!callback.IsUndefined() && callback.IsFunction()) {
-        TRY_CATCH_CALL(info.This(), callback, 0, NULL);
+        //TRY_CATCH_CALL(info.This(), callback, 0, NULL);
+        std::vector<napi_value> args;
+        (callback).MakeCallback(Napi::Value(info.This()), args);
         db->serialize = before;
     }
 
