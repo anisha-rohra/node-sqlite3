@@ -292,9 +292,7 @@ Napi::Value Database::Serialize(const Napi::CallbackInfo& info) {
     db->serialize = true;
 
     if (!callback.IsUndefined() && callback.IsFunction()) {
-        //TRY_CATCH_CALL(info.This(), callback, 0, NULL);
-        std::vector<napi_value> args;
-        (callback).MakeCallback(Napi::Value(info.This()), args);
+        TRY_CATCH_CALL(info.This(), callback, 0, NULL);
         db->serialize = before;
     }
 
@@ -312,9 +310,7 @@ Napi::Value Database::Parallelize(const Napi::CallbackInfo& info) {
     db->serialize = false;
 
     if (!callback.IsUndefined() && callback.IsFunction()) {
-        //TRY_CATCH_CALL(info.This(), callback, 0, NULL);
-        std::vector<napi_value> args;
-        (callback).MakeCallback(Napi::Value(info.This()), args);
+        TRY_CATCH_CALL(info.This(), callback, 0, NULL);
         db->serialize = before;
     }
 
