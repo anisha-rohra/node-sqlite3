@@ -111,17 +111,17 @@ Database::Database(const Napi::CallbackInfo& info) : Napi::ObjectWrap<Database>(
     Napi::Env env = info.Env();
 
     REQUIRE_ARGUMENT_STRING(0, filename);
-    int pos = 1;
+    unsigned int pos = 1;
 
     int mode;
-    if (info.Length() >= (unsigned)pos && info[pos].IsNumber()) {
+    if (info.Length() >= pos && info[pos].IsNumber()) {
         mode = info[pos++].As<Napi::Number>().Int32Value();
     } else {
         mode = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
     }
 
     Napi::Function callback;
-    if (info.Length() >= (unsigned)pos && info[pos].IsFunction()) {
+    if (info.Length() >= pos && info[pos].IsFunction()) {
         callback = info[pos++].As<Napi::Function>();
     }
 
