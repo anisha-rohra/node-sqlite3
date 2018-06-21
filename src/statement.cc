@@ -3,6 +3,7 @@
 #include "macros.h"
 #include "database.h"
 #include "statement.h"
+#include <napi.h>
 
 using namespace node_sqlite3;
 
@@ -164,13 +165,17 @@ void Statement::Work_AfterPrepare(uv_work_t* req) {
 
 template <class T> Values::Field*
                    Statement::BindParameter(const Napi::Value source, T pos) {
-    if (source.IsString()/* || source.IsRegExp()*/) {
+    Napi::Function date_func = source.Env().Global().Get("Date").As<Function>();
+    Napi::Function regexp_func = source.Env().Global().Get("RegExp").As<Function>();
+
+    if (source.IsString()) {
         std::string val = source.As<Napi::String>().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
     }
-    //else if (source.IsNumber()) {
-    //    return new Values::Integer(pos, source.As<Napi::Number>().Int32Value());
-    //}
+    else if (source.As<Object>().InstanceOf(regexp_func)) {
+        std::string val = source.ToString().Utf8Value();
+        return new Values::Text(pos, val.length(), val.c_str());
+    }
     else if (source.IsNumber()) {
         return new Values::Float(pos, source.As<Napi::Number>().DoubleValue());
     }
@@ -184,9 +189,9 @@ template <class T> Values::Field*
         Napi::Buffer<char> buffer = source.As<Napi::Buffer<char>>();
         return new Values::Blob(pos, buffer.Length(), buffer.Data());
     }
-    //else if (source.IsDate()) {
-    //    return new Values::Float(pos, source.As<Napi::Number>().DoubleValue());
-    //}
+    else if (source.As<Object>().InstanceOf(date_func)) {
+        return new Values::Float(pos, source.ToNumber().DoubleValue());
+    }
     else if (source.IsObject()) {
         std::string val = source.ToString().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
@@ -199,6 +204,8 @@ template <class T> Values::Field*
 template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start, int last) {
     Napi::Env env = info.Env();
     Napi::HandleScope scope(env);
+    Napi::Function date_func = env.Global().Get("Date").As<Function>();
+    Napi::Function regexp_func = env.Global().Get("RegExp").As<Function>();
 
     if (last < 0) last = info.Length();
     Napi::Function callback;
@@ -218,7 +225,7 @@ template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start,
                 baton->parameters.push_back(BindParameter((array).Get(i), pos));
             }
         }
-        else if (!info[start].IsObject()/* || info[start].IsRegExp() || info[start].IsDate()*/ || info[start].IsBuffer()) {
+        else if (!info[start].IsObject() || info[start].As<Object>().InstanceOf(regexp_func) || info[start].As<Object>().InstanceOf(date_func) || info[start].IsBuffer()) {
             // Parameters directly in array.
             // Note: bind parameters start with 1.
             for (int i = start, pos = 1; i < last; i++, pos++) {
