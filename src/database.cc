@@ -115,7 +115,13 @@ Database::Database(const Napi::CallbackInfo& info) : Napi::ObjectWrap<Database>(
 
     int mode;
     if (info.Length() >= pos && info[pos].IsNumber()) {
-        mode = info[pos++].As<Napi::Number>().Int32Value();
+        double orig_val = info[pos].As<Napi::Number>().DoubleValue();
+        double int_val = (double)info[pos].As<Napi::Number>().Int32Value();
+        if (orig_val == int_val) {
+            mode = info[pos++].As<Napi::Number>().Int32Value();
+        } else {
+            mode = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
+        }
     } else {
         mode = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
     }
@@ -339,6 +345,13 @@ Napi::Value Database::Configure(const Napi::CallbackInfo& info) {
         if (!info[1].IsNumber()) {
             Napi::TypeError::New(env, "Value must be an integer").ThrowAsJavaScriptException();
             return env.Null();
+        } else {
+            double orig_val = info[1].As<Napi::Number>().DoubleValue();
+            double int_val = (double)info[1].As<Napi::Number>().Int32Value();
+            if (orig_val != int_val) {
+                Napi::TypeError::New(env, "Value must be an integer").ThrowAsJavaScriptException();
+                return env.Null();
+            }
         }
         Napi::Function handle;
         Baton* baton = new Baton(db, handle);

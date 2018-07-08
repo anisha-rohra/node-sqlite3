@@ -55,7 +55,11 @@ inline Napi::String StringConcat(Napi::Value str1, Napi::Value str2) {
         var = (default);                                                       \
     }                                                                          \
     else if (info[i].IsNumber()) {                                             \
-        var = info[i].As<Napi::Number>().Int32Value();                            \
+        double orig_val = info[i].As<Napi::Number>().DoubleValue();            \
+        double int_val = (source)info[i].As<Napi::Number>().Int32Value();      \
+        if (orig_val == int_val) {                                             \
+            var = info[i].As<Napi::Number>().Int32Value();                     \
+        }                                                                      \
     }                                                                          \
     else {                                                                     \
         Napi::TypeError::New(env, "Argument " #i " must be an integer").ThrowAsJavaScriptException();      \

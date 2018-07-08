@@ -3,11 +3,12 @@
 #include "macros.h"
 #include "database.h"
 #include "statement.h"
-#include <napi.h>
 
 using namespace node_sqlite3;
 
 Napi::FunctionReference Statement::constructor;
+Napi::FunctionReference date;
+Napi::FunctionReference regexp;
 
 Napi::Object Statement::Init(Napi::Env env, Napi::Object exports) {
     Napi::HandleScope scope(env);
@@ -24,6 +25,15 @@ Napi::Object Statement::Init(Napi::Env env, Napi::Object exports) {
 
     constructor = Napi::Persistent(t);
     constructor.SuppressDestruct();
+
+    Napi::Function date_func = env.Global().Get("Date").As<Function>();
+    Napi::Function regexp_func = env.Global().Get("RegExp").As<Function>();
+
+    date = Napi::Persistent(date_func);
+    date.SuppressDestruct();
+
+    regexp = Napi::Persistent(regexp_func);
+    regexp.SuppressDestruct();
 
     exports.Set("Statement", t);
     return exports;
@@ -165,19 +175,23 @@ void Statement::Work_AfterPrepare(uv_work_t* req) {
 
 template <class T> Values::Field*
                    Statement::BindParameter(const Napi::Value source, T pos) {
-    Napi::Function date_func = source.Env().Global().Get("Date").As<Function>();
-    Napi::Function regexp_func = source.Env().Global().Get("RegExp").As<Function>();
 
     if (source.IsString()) {
         std::string val = source.As<Napi::String>().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
     }
-    else if (source.As<Object>().InstanceOf(regexp_func)) {
+    else if (source.As<Object>().InstanceOf(regexp.Value())) {
         std::string val = source.ToString().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
     }
     else if (source.IsNumber()) {
-        return new Values::Float(pos, source.As<Napi::Number>().DoubleValue());
+        double orig_val = source.As<Napi::Number>().DoubleValue();
+        double int_val = (double)source.As<Napi::Number>().Int32Value();
+        if (orig_val == int_val) {
+            return new Values::Integer(pos, source.As<Napi::Number>().Int32Value());
+        } else {
+            return new Values::Float(pos, source.As<Napi::Number>().DoubleValue());
+        }
     }
     else if (source.IsBoolean()) {
         return new Values::Integer(pos, source.As<Napi::Boolean>().Value() ? 1 : 0);
@@ -189,7 +203,7 @@ template <class T> Values::Field*
         Napi::Buffer<char> buffer = source.As<Napi::Buffer<char>>();
         return new Values::Blob(pos, buffer.Length(), buffer.Data());
     }
-    else if (source.As<Object>().InstanceOf(date_func)) {
+    else if (source.As<Object>().InstanceOf(date.Value())) {
         return new Values::Float(pos, source.ToNumber().DoubleValue());
     }
     else if (source.IsObject()) {
@@ -204,8 +218,6 @@ template <class T> Values::Field*
 template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start, int last) {
     Napi::Env env = info.Env();
     Napi::HandleScope scope(env);
-    Napi::Function date_func = env.Global().Get("Date").As<Function>();
-    Napi::Function regexp_func = env.Global().Get("RegExp").As<Function>();
 
     if (last < 0) last = info.Length();
     Napi::Function callback;
@@ -225,7 +237,7 @@ template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start,
                 baton->parameters.push_back(BindParameter((array).Get(i), pos));
             }
         }
-        else if (!info[start].IsObject() || info[start].As<Object>().InstanceOf(regexp_func) || info[start].As<Object>().InstanceOf(date_func) || info[start].IsBuffer()) {
+        else if (!info[start].IsObject() || info[start].As<Object>().InstanceOf(regexp.Value()) || info[start].As<Object>().InstanceOf(date.Value()) || info[start].IsBuffer()) {
             // Parameters directly in array.
             // Note: bind parameters start with 1.
             for (int i = start, pos = 1; i < last; i++, pos++) {
@@ -240,8 +252,12 @@ template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start,
                 Napi::Value name = (array).Get(i);
 
                 if (name.IsNumber()) {
-                    baton->parameters.push_back(
-                        BindParameter((object).Get(name), name.As<Napi::Number>().Int32Value()));
+                    double orig_val = name.As<Napi::Number>().DoubleValue();
+                    double int_val = (double)name.As<Napi::Number>().Int32Value();
+                    if (orig_val == int_val) {
+                        baton->parameters.push_back(
+                            BindParameter((object).Get(name), name.As<Napi::Number>().Int32Value()));
+                    }
                 }
                 else {
                     baton->parameters.push_back(BindParameter((object).Get(name),
