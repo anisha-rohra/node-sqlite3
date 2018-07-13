@@ -7,8 +7,8 @@
 using namespace node_sqlite3;
 
 Napi::FunctionReference Statement::constructor;
-Napi::FunctionReference date;
-Napi::FunctionReference regexp;
+static Napi::FunctionReference date;
+static Napi::FunctionReference regexp;
 
 Napi::Object Statement::Init(Napi::Env env, Napi::Object exports) {
     Napi::HandleScope scope(env);
@@ -26,17 +26,30 @@ Napi::Object Statement::Init(Napi::Env env, Napi::Object exports) {
     constructor = Napi::Persistent(t);
     constructor.SuppressDestruct();
 
-    Napi::Function date_func = env.Global().Get("Date").As<Function>();
-    Napi::Function regexp_func = env.Global().Get("RegExp").As<Function>();
-
-    date = Napi::Persistent(date_func);
-    date.SuppressDestruct();
-
-    regexp = Napi::Persistent(regexp_func);
-    regexp.SuppressDestruct();
-
     exports.Set("Statement", t);
     return exports;
+}
+
+// A Napi InstanceOf for Javascript Objects "Date" and "RegExp"
+bool OtherInstanceOf(Napi::Object source, char* object_type) {
+    if (date.IsEmpty()) {
+        Napi::Function date_func = source.Env().Global().Get("Date").As<Function>();
+        Napi::Function regexp_func = source.Env().Global().Get("RegExp").As<Function>();
+
+        date = Napi::Persistent(date_func);
+        date.SuppressDestruct();
+
+        regexp = Napi::Persistent(regexp_func);
+        regexp.SuppressDestruct();
+    }
+
+    if (object_type == "Date") {
+        return source.InstanceOf(date.Value());
+    } else if (object_type == "RegExp") {
+        return source.InstanceOf(regexp.Value());
+    }
+
+    return false;
 }
 
 void Statement::Process() {
@@ -180,14 +193,12 @@ template <class T> Values::Field*
         std::string val = source.As<Napi::String>().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
     }
-    else if (source.As<Object>().InstanceOf(regexp.Value())) {
+    else if (OtherInstanceOf(source.As<Object>(), "RegExp")) {
         std::string val = source.ToString().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
     }
     else if (source.IsNumber()) {
-        double orig_val = source.As<Napi::Number>().DoubleValue();
-        double int_val = (double)source.As<Napi::Number>().Int32Value();
-        if (orig_val == int_val) {
+        if (OtherIsInt(source.As<Napi::Number>())) {
             return new Values::Integer(pos, source.As<Napi::Number>().Int32Value());
         } else {
             return new Values::Float(pos, source.As<Napi::Number>().DoubleValue());
@@ -203,7 +214,7 @@ template <class T> Values::Field*
         Napi::Buffer<char> buffer = source.As<Napi::Buffer<char>>();
         return new Values::Blob(pos, buffer.Length(), buffer.Data());
     }
-    else if (source.As<Object>().InstanceOf(date.Value())) {
+    else if (OtherInstanceOf(source.As<Object>(), "Date")) {
         return new Values::Float(pos, source.ToNumber().DoubleValue());
     }
     else if (source.IsObject()) {
@@ -237,7 +248,7 @@ template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start,
                 baton->parameters.push_back(BindParameter((array).Get(i), pos));
             }
         }
-        else if (!info[start].IsObject() || info[start].As<Object>().InstanceOf(regexp.Value()) || info[start].As<Object>().InstanceOf(date.Value()) || info[start].IsBuffer()) {
+        else if (!info[start].IsObject() || OtherInstanceOf(info[start].As<Object>(), "RegExp") || OtherInstanceOf(info[start].As<Object>(), "Date") || info[start].IsBuffer()) {
             // Parameters directly in array.
             // Note: bind parameters start with 1.
             for (int i = start, pos = 1; i < last; i++, pos++) {
@@ -252,9 +263,7 @@ template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start,
                 Napi::Value name = (array).Get(i);
 
                 if (name.IsNumber()) {
-                    double orig_val = name.As<Napi::Number>().DoubleValue();
-                    double int_val = (double)name.As<Napi::Number>().Int32Value();
-                    if (orig_val == int_val) {
+                    if (OtherIsInt(name.As<Number>())) {
                         baton->parameters.push_back(
                             BindParameter((object).Get(name), name.As<Napi::Number>().Int32Value()));
                     }

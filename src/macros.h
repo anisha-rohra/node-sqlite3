@@ -12,6 +12,17 @@ inline Napi::String StringConcat(Napi::Value str1, Napi::Value str2) {
                     str2.As<Napi::String>().Utf8Value() );
 }
 
+// A Napi substitute IsInt32()
+inline bool OtherIsInt(Napi::Number source) {
+    double orig_val = source.DoubleValue();
+    double int_val = (double)source.Int32Value();
+    if (orig_val == int_val) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 #define REQUIRE_ARGUMENTS(n)                                                   \
     if (info.Length() < (n)) {                                                 \
         Napi::TypeError::New(env, "Expected " #n "arguments").ThrowAsJavaScriptException();                \
@@ -55,9 +66,7 @@ inline Napi::String StringConcat(Napi::Value str1, Napi::Value str2) {
         var = (default);                                                       \
     }                                                                          \
     else if (info[i].IsNumber()) {                                             \
-        double orig_val = info[i].As<Napi::Number>().DoubleValue();            \
-        double int_val = (source)info[i].As<Napi::Number>().Int32Value();      \
-        if (orig_val == int_val) {                                             \
+        if (OtherIsInt(info[i].As<Number>())) {                                \
             var = info[i].As<Napi::Number>().Int32Value();                     \
         }                                                                      \
     }                                                                          \
