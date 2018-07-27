@@ -189,12 +189,8 @@ void Statement::Work_AfterPrepare(uv_work_t* req) {
 template <class T> Values::Field*
                    Statement::BindParameter(const Napi::Value source, T pos) {
 
-    if (source.IsString()) {
+    if (source.IsString() || OtherInstanceOf(source.As<Object>(), "RegExp")) {
         std::string val = source.As<Napi::String>().Utf8Value();
-        return new Values::Text(pos, val.length(), val.c_str());
-    }
-    else if (OtherInstanceOf(source.As<Object>(), "RegExp")) {
-        std::string val = source.ToString().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
     }
     else if (source.IsNumber()) {
@@ -262,11 +258,9 @@ template <class T> T* Statement::Bind(const Napi::CallbackInfo& info, int start,
             for (int i = 0; i < length; i++) {
                 Napi::Value name = (array).Get(i);
 
-                if (name.IsNumber()) {
-                    if (OtherIsInt(name.As<Number>())) {
-                        baton->parameters.push_back(
-                            BindParameter((object).Get(name), name.As<Napi::Number>().Int32Value()));
-                    }
+                if (name.IsNumber() && OtherIsInt(name.As<Number>())) {
+                    baton->parameters.push_back(
+                        BindParameter((object).Get(name), name.As<Napi::Number>().Int32Value()));
                 }
                 else {
                     baton->parameters.push_back(BindParameter((object).Get(name),
