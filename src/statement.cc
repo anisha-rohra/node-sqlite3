@@ -344,7 +344,7 @@ Napi::Value Statement::Bind(const Napi::CallbackInfo& info) {
     Baton* baton = stmt->Bind<Baton>(info);
     if (baton == NULL) {
         Napi::TypeError::New(env, "Data type is not supported").ThrowAsJavaScriptException();
-        return env.Null();
+        return Napi::Boolean::New(env, false);
     }
     else {
         stmt->Schedule(Work_BeginBind, baton);
@@ -395,7 +395,7 @@ Napi::Value Statement::Get(const Napi::CallbackInfo& info) {
     Baton* baton = stmt->Bind<RowBaton>(info);
     if (baton == NULL) {
         Napi::Error::New(env, "Data type is not supported").ThrowAsJavaScriptException();
-        return env.Null();
+        return Napi::Boolean::New(env, false);
     }
     else {
         stmt->Schedule(Work_BeginGet, baton);
@@ -466,7 +466,7 @@ Napi::Value Statement::Run(const Napi::CallbackInfo& info) {
     Baton* baton = stmt->Bind<RunBaton>(info);
     if (baton == NULL) {
         Napi::Error::New(env, "Data type is not supported").ThrowAsJavaScriptException();
-        return env.Null();
+        return Napi::Boolean::New(env, false);
     }
     else {
         stmt->Schedule(Work_BeginRun, baton);
@@ -535,7 +535,7 @@ Napi::Value Statement::All(const Napi::CallbackInfo& info) {
     Baton* baton = stmt->Bind<RowsBaton>(info);
     if (baton == NULL) {
         Napi::Error::New(env, "Data type is not supported").ThrowAsJavaScriptException();
-        return env.Null();
+        return Napi::Boolean::New(env, false);
     }
     else {
         stmt->Schedule(Work_BeginAll, baton);
@@ -627,7 +627,7 @@ Napi::Value Statement::Each(const Napi::CallbackInfo& info) {
     EachBaton* baton = stmt->Bind<EachBaton>(info, 0, last);
     if (baton == NULL) {
         Napi::Error::New(env, "Data type is not supported").ThrowAsJavaScriptException();
-        return env.Null();
+        return Napi::Boolean::New(env, false);
     }
     else {
         baton->completed.Reset(completed, 1);
