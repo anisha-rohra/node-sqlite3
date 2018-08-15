@@ -189,8 +189,12 @@ void Statement::Work_AfterPrepare(uv_work_t* req) {
 template <class T> Values::Field*
                    Statement::BindParameter(const Napi::Value source, T pos) {
 
-    if (source.IsString() || OtherInstanceOf(source.As<Object>(), "RegExp")) {
+    if (source.IsString()) {
         std::string val = source.As<Napi::String>().Utf8Value();
+        return new Values::Text(pos, val.length(), val.c_str());
+    }
+    else if (OtherInstanceOf(source.As<Object>(), "RegExp")) {
+        std::string val = source.ToString().Utf8Value();
         return new Values::Text(pos, val.length(), val.c_str());
     }
     else if (source.IsNumber()) {
