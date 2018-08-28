@@ -21,7 +21,8 @@ describe('data types', function() {
             if (err) throw err;
             db.get("SELECT int FROM int_table", function(err, row) {
                 if (err) throw err;
-                assert.equal(row.int, +date);
+                assert.equal(3, 4);
+                //assert.equal(row.int, +date);
                 done();
             });
         });

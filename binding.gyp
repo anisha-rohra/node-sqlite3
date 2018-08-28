@@ -7,8 +7,6 @@
   "targets": [
     {
       "target_name": "<(module_name)",
-      "cflags!": [ "-fno-exceptions" ],
-      "cflags_cc!": [ "-fno-exceptions" ],
       "include_dirs": ["<!@(node -p \"require('node-addon-api').include\")"],
       "dependencies": ["<!(node -p \"require('node-addon-api').gyp\")"],
       "conditions": [
@@ -34,19 +32,24 @@
         }
         ]
       ],
-      'xcode_settings': {
-        'MACOSX_DEPLOYMENT_TARGET':'10.8',
-        'CLANG_CXX_LIBRARY': 'libc++',
-        'CLANG_CXX_LANGUAGE_STANDARD':'c++11',
-        'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0'
-      },
-      'defines': [ 'NAPI_DISABLE_CPP_EXCEPTIONS' ],
-      "cflags": [ "-include ../src/gcc-preinclude.h" ],
       "sources": [
         "src/database.cc",
         "src/node_sqlite3.cc",
         "src/statement.cc"
-      ]
+      ],
+      'cflags!': [ '-fno-exceptions' ],
+      'cflags_cc!': [ '-fno-exceptions' ],
+      "cflags": [ "-include ../src/gcc-preinclude.h" ],
+      'xcode_settings': {
+        'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',
+        'CLANG_CXX_LIBRARY': 'libc++',
+        'MACOSX_DEPLOYMENT_TARGET': '10.8',
+        'CLANG_CXX_LANGUAGE_STANDARD':'c++11',
+        'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0'
+      },
+      'msvs_settings': {
+        'VCCLCompilerTool': { 'ExceptionHandling': 1 },
+      },
     },
     {
       "target_name": "action_after_build",
