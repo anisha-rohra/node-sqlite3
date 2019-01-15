@@ -402,13 +402,13 @@ void Database::RegisterTraceCallback(Baton* baton) {
 
     if (db->debug_trace == NULL) {
         // Add it.
-        db->debug_trace = new AsyncTrace(db, TraceCallback);
+        db->debug_trace = new AsyncTrace(&TraceCallback, db);
         sqlite3_trace(db->_handle, TraceCallback, db);
     }
     else {
         // Remove it.
         sqlite3_trace(db->_handle, NULL, NULL);
-        db->debug_trace->finish();
+        db->debug_trace->Execute();
         db->debug_trace = NULL;
     }
 
@@ -441,13 +441,13 @@ void Database::RegisterProfileCallback(Baton* baton) {
 
     if (db->debug_profile == NULL) {
         // Add it.
-        db->debug_profile = new AsyncProfile(db, ProfileCallback);
+        db->debug_profile = new AsyncProfile(&ProfileCallback, db);
         sqlite3_profile(db->_handle, ProfileCallback, db);
     }
     else {
         // Remove it.
         sqlite3_profile(db->_handle, NULL, NULL);
-        db->debug_profile->finish();
+        db->debug_profile->Execute();
         db->debug_profile = NULL;
     }
 
@@ -483,13 +483,13 @@ void Database::RegisterUpdateCallback(Baton* baton) {
 
     if (db->update_event == NULL) {
         // Add it.
-        db->update_event = new AsyncUpdate(db, UpdateCallback);
+        db->update_event = new AsyncUpdate(&UpdateCallback, db);
         sqlite3_update_hook(db->_handle, UpdateCallback, db);
     }
     else {
         // Remove it.
         sqlite3_update_hook(db->_handle, NULL, NULL);
-        db->update_event->finish();
+        db->update_event->Execute();
         db->update_event = NULL;
     }
 
@@ -703,11 +703,11 @@ void Database::Work_AfterLoadExtension(uv_work_t* req) {
 
 void Database::RemoveCallbacks() {
     if (debug_trace) {
-        debug_trace->finish();
+        debug_trace->Execute();
         debug_trace = NULL;
     }
     if (debug_profile) {
-        debug_profile->finish();
+        debug_profile->Execute();
         debug_profile = NULL;
     }
 }

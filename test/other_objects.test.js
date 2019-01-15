@@ -21,8 +21,7 @@ describe('data types', function() {
             if (err) throw err;
             db.get("SELECT int FROM int_table", function(err, row) {
                 if (err) throw err;
-                assert.equal(3, 4);
-                //assert.equal(row.int, +date);
+                assert.equal(row.int, +date);
                 done();
             });
         });
@@ -32,11 +31,14 @@ describe('data types', function() {
         var regexp = /^f\noo/;
         db.run("INSERT INTO txt_table VALUES(?)", regexp, function (err) {
             if (err) throw err;
-            db.get("SELECT txt FROM txt_table", function(err, row) {
+            /*db.get("SELECT txt FROM txt_table", function(err, row) {
                 if (err) throw err;
                 assert.equal(row.txt, String(regexp));
                 done();
-            });
+            });*/
+            assert.equal(3, 4);
+            console.log("HERE");
+            done();
         });
     });
 
